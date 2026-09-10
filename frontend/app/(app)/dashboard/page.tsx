@@ -158,7 +158,12 @@ export default function Dashboard() {
         </Card>
       )}
 
-      <Card title="Live event feed" description="3.5s poll over the append-only registry stream." bodyClassName="max-h-[340px] overflow-y-auto">
+      <Card
+        title="Live event feed"
+        description={connected ? "Streaming from the append-only registry" : "Reconnecting — polling the registry"}
+        actions={<Badge tone={connected ? "success" : "warning"} dot>{connected ? "Live" : "Polling"}</Badge>}
+        bodyClassName="max-h-[340px] overflow-y-auto"
+      >
         {feed.length ? (
           <ul className="space-y-1.5">
             {feed.map((e) => (

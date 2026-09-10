@@ -174,8 +174,9 @@ def seed(db: Session) -> dict:
                                event_type="RETURN_INITIATED",
                                payload={"return_request_id": rrx.id, "quantity_reported": qty})
 
-    # D — fraud demo: expired, still ACTIVE, retailer A holds it, will initiate return live
-    D = mk_batch("D", "Azithromycin 500mg Tablets", -2, mfr, "D0001")
+    # D — fraud demo: ACTIVE and near expiry (NOT crossed, so the expiry job leaves it be);
+    # Retailer A holds it and initiates the return live during the demo.
+    D = mk_batch("D", "Azithromycin 500mg Tablets", 4, mfr, "D0001")
     hold(D, ra, 25)
 
     # E — dispute demo: returned + retailer-confirmed qty, pickup scheduled

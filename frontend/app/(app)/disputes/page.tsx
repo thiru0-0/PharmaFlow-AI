@@ -35,6 +35,16 @@ export default function DisputesPage() {
         title="Disputes"
         description="Quantity-mismatch cases between a retailer's reported return and the distributor's confirmed pickup."
       />
+
+      <Alert tone="info" icon={<Scale size={16} />} title="What a dispute is, and why it matters">
+        When the distributor&apos;s physically-counted quantity doesn&apos;t match what the pharmacy
+        reported — beyond a small tolerance — the batch is <b>frozen</b> and a case opens here. An
+        unexplained gap in the return pipeline is exactly how diverted medicine hides, so a batch
+        can&apos;t reach a destruction certificate until a supervisor reconciles the numbers. Both
+        parties attach recount evidence; the resolution is written to the tamper-evident registry
+        and the original dispute is never erased.
+      </Alert>
+
       {msg && <Alert tone={msg.tone}>{msg.text}</Alert>}
 
       <Card padded={false}>
@@ -89,6 +99,28 @@ export default function DisputesPage() {
             Difference <b className="mx-1 text-ink">{sel.difference}</b> exceeds tolerance <b className="mx-1 text-ink">±{sel.tolerance_units}</b>
             — batch <StatusBadge value={sel.batch_state} /> and blocked from progressing while open.
           </div>
+
+          {(() => {
+            const steps = ["Opened", "Evidence", "Adjudicated", "Resolved"];
+            const done =
+              sel.status === "RESOLVED" ? 4 : sel.evidence?.length ? 2 : 1;
+            return (
+              <div className="mt-4 flex flex-wrap items-center gap-1.5">
+                {steps.map((s, i) => (
+                  <React.Fragment key={s}>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[11.5px] font-semibold ${
+                        i < done ? "bg-brand-soft text-brand" : "bg-line-soft text-muted"
+                      }`}
+                    >
+                      {s}
+                    </span>
+                    {i < steps.length - 1 && <span className="text-line">—</span>}
+                  </React.Fragment>
+                ))}
+              </div>
+            );
+          })()}
 
           <div className="mt-4">
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Evidence</div>

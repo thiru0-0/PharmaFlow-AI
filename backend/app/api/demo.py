@@ -40,6 +40,11 @@ def run_dispute(user: CurrentUser, db: DbDep, _=admin_only):
     return scenarios.run_dispute(db)
 
 
+@router.post("/scripts/pulse")
+def run_pulse(user: CurrentUser, db: DbDep, _=admin_only):
+    return scenarios.run_pulse(db)
+
+
 @router.post("/jobs/expiry")
 def run_expiry(user: CurrentUser, db: DbDep, _=admin_only):
     from app.services import expiry

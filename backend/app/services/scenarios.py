@@ -228,3 +228,94 @@ def run_dispute(db: Session) -> dict:
                             f"-> DISPUTED, batch blocked"})
     return {"scenario": "dispute", "elapsed_seconds": round(time.perf_counter() - t0, 2),
             "dispute_id": d.id, "batch_state": E.state, "steps": steps}
+
+
+# batches the scripted demos rely on being in a fixed state — pulse leaves them alone
+_PROTECTED = {"AZ-2025-D", "AZ-2025-E"}
+
+
+def run_pulse(db: Session) -> dict:
+    """One small burst of realistic network activity — a couple of sales and one batch
+    advancing a step — so the dashboard visibly moves during a live demo."""
+    import random
+
+    from app.models import PickupRoute
+
+    steps: list[str] = []
+
+    # 1) a sale or two at retailers who still hold ACTIVE stock
+    holdings = db.execute(
+        select(BatchHolding, Batch)
+        .join(Batch, Batch.id == BatchHolding.batch_id)
+        .where(BatchHolding.quantity_on_hand > 3, Batch.state == BatchState.ACTIVE.value)
+    ).all()
+    random.shuffle(holdings)
+    for h, b in holdings[:2]:
+        qty = random.randint(1, min(4, h.quantity_on_hand))
+        retailer = db.get(User, h.retailer_id)
+        h.quantity_on_hand -= qty
+        db.add(h)
+        db.add(PosTransaction(batch_id=b.id, retailer_id=h.retailer_id, quantity=qty, scanned_at=utcnow()))
+        registry.record_event(db, event_type="POS_SALE", batch=b, actor=retailer,
+                              payload={"quantity": qty, "retailer": retailer.name,
+                                       "remaining_on_hand": h.quantity_on_hand})
+        db.commit()
+        steps.append(f"{retailer.name} sold {qty} × {b.batch_number} ({h.quantity_on_hand} left)")
+
+    # 2) advance one non-protected batch by a single step
+    advanced = None
+    batches = db.execute(select(Batch).where(Batch.batch_number.notin_(_PROTECTED))).scalars().all()
+    random.shuffle(batches)
+    for b in batches:
+        rr = db.execute(select(ReturnRequest).where(ReturnRequest.batch_id == b.id)).scalars().first()
+        if b.state == BatchState.RETURN_INITIATED.value and rr and rr.quantity_reported:
+            dist = db.get(User, rr.distributor_id)
+            route = PickupRoute(distributor_id=dist.id, algorithm="ortools_cvrp", stops=[], vehicle_capacity=500)
+            db.add(route)
+            db.flush()
+            db.add(Pickup(return_request_id=rr.id, distributor_id=dist.id, route_id=route.id,
+                          status=PickupStatus.SCHEDULED.value))
+            rr.status = ReturnStatus.PICKUP_SCHEDULED.value
+            db.flush()
+            batch_state.transition(db, b, BatchState.PICKUP_SCHEDULED, actor=dist,
+                                   event_type="PICKUP_SCHEDULED", payload={"return_request_id": rr.id, "trigger": "pulse"})
+            advanced = f"{b.batch_number} → PICKUP_SCHEDULED"
+        elif b.state == BatchState.PICKUP_SCHEDULED.value:
+            pk = db.execute(
+                select(Pickup).join(ReturnRequest, ReturnRequest.id == Pickup.return_request_id)
+                .where(ReturnRequest.batch_id == b.id, Pickup.status == PickupStatus.SCHEDULED.value)
+            ).scalars().first()
+            if not pk or not rr or not rr.quantity_reported:
+                continue
+            dist = db.get(User, pk.distributor_id)
+            pk.quantity_confirmed = rr.quantity_reported
+            pk.status = PickupStatus.CONFIRMED.value
+            pk.confirmed_at = utcnow()
+            rr.status = ReturnStatus.PICKED_UP.value
+            db.flush()
+            batch_state.transition(db, b, BatchState.PICKUP_CONFIRMED, actor=dist,
+                                   event_type="PICKUP_CONFIRMED",
+                                   payload={"pickup_id": pk.id, "quantity_confirmed": pk.quantity_confirmed,
+                                            "within_tolerance": True, "trigger": "pulse"})
+            advanced = f"{b.batch_number} → PICKUP_CONFIRMED"
+        elif b.state == BatchState.PICKUP_CONFIRMED.value:
+            mfr = db.get(User, b.manufacturer_id)
+            pk = db.execute(
+                select(Pickup).join(ReturnRequest, ReturnRequest.id == Pickup.return_request_id)
+                .where(ReturnRequest.batch_id == b.id)
+            ).scalars().first()
+            qty = (pk.quantity_confirmed if pk else None) or (rr.quantity_reported if rr else 0) or 1
+            db.add(ManufacturerReceipt(batch_id=b.id, distributor_id=rr.distributor_id if rr else mfr.id,
+                                       manufacturer_id=mfr.id, quantity=qty))
+            db.flush()
+            batch_state.transition(db, b, BatchState.RECEIVED_BY_MANUFACTURER, actor=mfr,
+                                   event_type="RECEIVED_BY_MANUFACTURER", payload={"quantity": qty, "trigger": "pulse"})
+            advanced = f"{b.batch_number} → RECEIVED_BY_MANUFACTURER"
+        if advanced:
+            db.commit()
+            steps.append(advanced)
+            break
+
+    if not steps:
+        steps.append("network is quiet — nothing to simulate (try a demo reset)")
+    return {"scenario": "pulse", "steps": steps}

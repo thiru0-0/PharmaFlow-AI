@@ -4,6 +4,7 @@ import logging
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from app.core.config import settings
 from app.db.base import SessionLocal
 from app.services import expiry, registry, sla
 
@@ -36,13 +37,19 @@ def start() -> None:
     global _scheduler
     if _scheduler:
         return
+    demo = settings.APP_ENV == "demo"
     _scheduler = BackgroundScheduler(timezone="UTC")
-    _scheduler.add_job(lambda: _run("expiry", expiry.run), "interval", hours=6, id="expiry")
-    _scheduler.add_job(lambda: _run("sla", sla.scan), "interval", hours=6, id="sla")
-    _scheduler.add_job(lambda: _run("verify", _verify), "interval", minutes=30, id="verify")
-    _scheduler.add_job(lambda: _run("checkpoint", _checkpoint), "interval", hours=1, id="checkpoint")
+    # In demo mode the jobs run on a tight loop so a live audience sees the network breathe.
+    _scheduler.add_job(lambda: _run("expiry", expiry.run), "interval",
+                       seconds=90 if demo else 6 * 3600, id="expiry")
+    _scheduler.add_job(lambda: _run("sla", sla.scan), "interval",
+                       seconds=150 if demo else 6 * 3600, id="sla")
+    _scheduler.add_job(lambda: _run("verify", _verify), "interval",
+                       seconds=120 if demo else 1800, id="verify")
+    _scheduler.add_job(lambda: _run("checkpoint", _checkpoint), "interval",
+                       seconds=300 if demo else 3600, id="checkpoint")
     _scheduler.start()
-    log.info("scheduler started")
+    log.info("scheduler started (demo=%s)", demo)
 
 
 def stop() -> None:
