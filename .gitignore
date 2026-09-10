@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Env / secrets
+.env
+.env.local
+*.pem
+backend/app/keys/*.key
+signing_keys/
+
+# Node / Next
+node_modules/
+.next/
+out/
+frontend/.env*.local
+npm-debug.log*
+
+# Uploads / local storage
+backend/uploads/
+backend/storage/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.log
+dist/
+build/
+.coverage
+htmlcov/
+backend/pharmaflow_dev.db
+backend/pharmaflow_test.db
+backend/pharmaflow_dev.db-*
+backend/pharmaflow_test.db-*
+*.db-shm
+*.db-wal
