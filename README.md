@@ -26,8 +26,23 @@ CDSCO, licensing, biomedical-waste and state requirements.
 | Database | PostgreSQL (target) · SQLite fallback for zero-setup local runs |
 | Registry | SHA-256 hash chain · canonical JSON · Ed25519 signatures (one keypair per license) |
 | Route optimization | Google OR-Tools capacitated VRP (labelled nearest-neighbour fallback) |
-| Jobs | APScheduler — expiry, SLA, registry verification, Merkle checkpoint |
+| Jobs | APScheduler — expiry, SLA, registry verification, Merkle checkpoint (every ~90s in demo mode) |
 | Notifications | Provider abstraction, mock by default, per-recipient delivery status |
+| Real-time | Server-Sent Events (`GET /stream`) + in-process event bus fired on `after_commit`; every screen updates live, polls only as a fallback |
+
+## Real-time
+
+Every state-changing action (`registry.record_event`, `notifications.notify`, re-entry blocks)
+stages an event on the DB session; a single `after_commit` listener fans it out to all connected
+SSE clients, so a client never sees an event before its transaction is durable. The browser opens
+**one** `EventSource` per session (`lib/realtime.tsx` → `RealtimeProvider`); `useLiveQuery` refetches
+the affected data on a relevant event, on tab focus, and — only while the stream is disconnected —
+on a short poll. The topbar shows a **Live / Reconnecting** indicator and a notification bell.
+
+Multi-machine: point every client's `NEXT_PUBLIC_API_URL` at one backend + one Postgres and it just
+works — Pharmacy A's action shows on the distributor's and regulator's screens within ~1–2 s, no
+refresh. (Single backend process today; for multiple workers, bridge `events.publish` to Postgres
+`LISTEN/NOTIFY`.)
 
 ### Roles
 `RETAILER` · `DISTRIBUTOR` · `MANUFACTURER` · `STATE_DRUG_CONTROLLER` · `ADMIN`. Every account is
@@ -143,8 +158,13 @@ The login screen has one-click buttons for each (still real authentication).
 
 ## The two demo scripts
 
-Both run for real against the database. **Admin → Demo Control** has one-click buttons; each reports
-elapsed time. `RESET DEMO DATA` restores the exact seeded state so the fraud scenario is re-runnable.
+Both run for real against the database. **Admin → Demo Control** has a "How to run the demo" guide,
+one-click scenario buttons, and a **Simulate activity / Keep simulating** toggle that generates a
+small burst of real network activity every 8 s so the Control Tower visibly moves while you present.
+`Reset demo data` restores the exact seeded state so the fraud scenario is re-runnable.
+
+Best setup: open **State Drug Controller → Control Tower** on one screen, drive from **Demo Control**
+on another — every scenario and every simulated action updates the Control Tower live.
 
 ### Fraud scenario (~0.02 s server-side; well under 60 s through the UI)
 1. Log in as **Retailer A**, open **Batch D**, **Initiate return** → batch flips to
