@@ -1,86 +1,108 @@
 "use client";
 import React from "react";
 import Link from "next/link";
+import { Inbox, FileCheck2, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
-import { Badge, Card, useAsync } from "@/lib/ui";
+import {
+  Alert, Badge, Button, Card, EmptyState, Mono, PageHeader, PromptModal,
+  SkeletonRows, StatusBadge, Table, Td, Tr, useAsync,
+} from "@/lib/ui";
 
 export default function ManufacturerPage() {
   const inbound = useAsync<any[]>(() => api("/manufacturer/inbound"), []);
   const receipts = useAsync<any[]>(() => api("/manufacturer/receipts"), []);
-  const [msg, setMsg] = React.useState<string | null>(null);
-  const [err, setErr] = React.useState<string | null>(null);
+  const [msg, setMsg] = React.useState<{ tone: "success" | "danger"; text: string } | null>(null);
+  const [receiptRow, setReceiptRow] = React.useState<any>(null);
+  const [certBusy, setCertBusy] = React.useState<string | null>(null);
 
-  function reloadAll() { inbound.reload(); receipts.reload(); }
-
-  async function recordReceipt(b: any) {
-    const q = prompt(`Confirmed received quantity for ${b.batch_number}?`, String(b.quantity_confirmed ?? ""));
-    if (!q) return;
-    setErr(null); setMsg(null);
-    try {
-      const r = await api<any>("/manufacturer/receipts", { method: "POST", body: { batch_id: b.batch_id, quantity: Number(q) } });
-      setMsg(`Receipt recorded — batch ${r.batch_state}`); reloadAll();
-    } catch (e) { setErr((e as any).message); }
-  }
+  const reloadAll = () => { inbound.reload(); receipts.reload(); };
 
   async function uploadCert(rc: any) {
-    setErr(null); setMsg(null);
+    setCertBusy(rc.receipt_id); setMsg(null);
     try {
       const r = await api<any>("/manufacturer/certificates", {
         method: "POST",
         body: { batch_id: rc.batch_id, facility_name: "GreenCycle Biomedical Waste Facility (synthetic)", cert_url: "mock://uploads/cert.pdf", reason: "expired" },
       });
-      setMsg(`Certificate accepted — batch ${r.batch_state}. Disposal record auto-populated.`); reloadAll();
-    } catch (e) { setErr((e as any).message); }
+      setMsg({ tone: "success", text: `Certificate accepted — batch ${r.batch_state?.replaceAll("_", " ")}. Disposal record auto-populated.` });
+      reloadAll();
+    } catch (e: any) {
+      setMsg({ tone: "danger", text: e.message });
+    } finally { setCertBusy(null); }
   }
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <h1 style={{ margin: 0 }}>Manufacturer — Receipts &amp; Destruction</h1>
-      {msg && <div className="card" style={{ padding: 12, color: "var(--ok)", fontWeight: 600 }}>{msg}</div>}
-      {err && <div className="card" style={{ padding: 12, color: "var(--danger)", fontWeight: 600, borderColor: "var(--danger)", background: "#fef2f2" }}>{err}</div>}
+    <div className="space-y-6">
+      <PageHeader
+        title="Manufacturer Desk"
+        description="Confirm receipt of returned batches and issue destruction certificates once received."
+      />
 
-      <Card title="Inbound — confirmed pickups awaiting receipt">
-        <table>
-          <thead><tr><th>Batch</th><th>Drug</th><th>Qty confirmed</th><th>State</th><th></th></tr></thead>
-          <tbody>
-            {(inbound.data || []).map((b) => (
-              <tr key={b.batch_id}>
-                <td className="mono">{b.batch_number}</td>
-                <td>{b.drug_name}</td>
-                <td>{b.quantity_confirmed}</td>
-                <td><Badge state={b.batch_state} /></td>
-                <td><button className="btn" style={{ fontSize: 12, padding: "4px 8px" }} onClick={() => recordReceipt(b)}>Confirm receipt</button></td>
-              </tr>
-            ))}
-            {!inbound.data?.length && <tr><td colSpan={5} style={{ color: "var(--muted)" }}>Nothing inbound.</td></tr>}
-          </tbody>
-        </table>
+      {msg && <Alert tone={msg.tone} title={msg.tone === "danger" ? "Certificate blocked" : "Done"}>{msg.text}</Alert>}
+
+      <Card title="Inbound" description="Confirmed pickups for your batches, awaiting a receipt record." padded={false}>
+        <div className="p-5">
+          {inbound.loading ? <SkeletonRows /> : (
+            <Table head={["Batch", "Drug", "Qty confirmed", "State", ""]} empty={!inbound.data?.length} emptyLabel="Nothing inbound">
+              {(inbound.data || []).map((b) => (
+                <Tr key={b.batch_id}>
+                  <Td className="text-ink"><Mono>{b.batch_number}</Mono></Td>
+                  <Td>{b.drug_name}</Td>
+                  <Td className="tabular-nums">{b.quantity_confirmed}</Td>
+                  <Td><StatusBadge value={b.batch_state} /></Td>
+                  <Td className="text-right"><Button size="sm" icon={<Inbox size={14} />} onClick={() => setReceiptRow(b)}>Confirm receipt</Button></Td>
+                </Tr>
+              ))}
+            </Table>
+          )}
+        </div>
       </Card>
 
-      <Card title="Receipts &amp; certificates" right={<button className="btn secondary" onClick={receipts.reload}>Refresh</button>}>
-        <p style={{ color: "var(--muted)", fontSize: 13, marginTop: 0 }}>
-          Certificate upload is gated: it is blocked unless a confirmed manufacturer receipt exists and the batch is <span className="mono">RECEIVED_BY_MANUFACTURER</span>.
-        </p>
-        <table>
-          <thead><tr><th>Batch</th><th>Drug</th><th>Qty</th><th>Received</th><th>State</th><th></th></tr></thead>
-          <tbody>
-            {(receipts.data || []).map((rc) => (
-              <tr key={rc.receipt_id}>
-                <td><Link className="mono" href={`/batch/${rc.batch_id}`}>{rc.batch_number}</Link></td>
-                <td>{rc.drug_name}</td>
-                <td>{rc.quantity}</td>
-                <td>{String(rc.received_at).slice(0, 10)}</td>
-                <td><Badge state={rc.batch_state} /></td>
-                <td>
-                  {rc.certificate_id ? <span className="badge green">certified</span>
-                    : <button className="btn" style={{ fontSize: 12, padding: "4px 8px" }} onClick={() => uploadCert(rc)}>Upload destruction certificate</button>}
-                </td>
-              </tr>
-            ))}
-            {!receipts.data?.length && <tr><td colSpan={6} style={{ color: "var(--muted)" }}>No receipts.</td></tr>}
-          </tbody>
-        </table>
+      <Card
+        title="Receipts & certificates"
+        description="Certificate upload is blocked unless a confirmed receipt exists and the batch is RECEIVED_BY_MANUFACTURER."
+        actions={<Button size="sm" variant="ghost" onClick={receipts.reload}>Refresh</Button>}
+        padded={false}
+      >
+        <div className="p-5">
+          {receipts.loading ? <SkeletonRows /> : receipts.data?.length ? (
+            <Table head={["Batch", "Drug", "Qty", "Received", "State", ""]}>
+              {receipts.data.map((rc) => (
+                <Tr key={rc.receipt_id}>
+                  <Td className="text-ink"><Link href={`/batch/${rc.batch_id}`} className="hover:text-brand"><Mono>{rc.batch_number}</Mono></Link></Td>
+                  <Td>{rc.drug_name}</Td>
+                  <Td className="tabular-nums">{rc.quantity}</Td>
+                  <Td>{String(rc.received_at).slice(0, 10)}</Td>
+                  <Td><StatusBadge value={rc.batch_state} /></Td>
+                  <Td className="text-right">
+                    {rc.certificate_id
+                      ? <Badge tone="success"><ShieldCheck size={12} /> Certified</Badge>
+                      : <Button size="sm" icon={<FileCheck2 size={14} />} loading={certBusy === rc.receipt_id} onClick={() => uploadCert(rc)}>Upload certificate</Button>}
+                  </Td>
+                </Tr>
+              ))}
+            </Table>
+          ) : (
+            <EmptyState icon={<FileCheck2 size={18} />} title="No receipts yet" description="Confirm an inbound pickup to start the destruction record." />
+          )}
+        </div>
       </Card>
+
+      <PromptModal
+        open={!!receiptRow}
+        onClose={() => setReceiptRow(null)}
+        title={`Confirm receipt · ${receiptRow?.batch_number ?? ""}`}
+        label="Confirmed received quantity"
+        type="number"
+        defaultValue={String(receiptRow?.quantity_confirmed ?? "")}
+        submitLabel="Confirm receipt"
+        onSubmit={async (v) => {
+          const r = await api<any>("/manufacturer/receipts", { method: "POST", body: { batch_id: receiptRow.batch_id, quantity: Number(v) } });
+          setReceiptRow(null);
+          setMsg({ tone: "success", text: `Receipt recorded — batch ${r.batch_state?.replaceAll("_", " ")}.` });
+          reloadAll();
+        }}
+      />
     </div>
   );
 }

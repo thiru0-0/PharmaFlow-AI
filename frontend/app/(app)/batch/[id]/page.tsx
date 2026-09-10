@@ -2,8 +2,12 @@
 import React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { ArrowLeft, ShieldCheck, ShieldX } from "lucide-react";
 import { api } from "@/lib/api";
-import { Badge, Card } from "@/lib/ui";
+import {
+  Alert, Badge, Card, DataGrid, Mono, SkeletonRows, StatusBadge,
+  Timeline, TimelineItem, toneFor,
+} from "@/lib/ui";
 
 const STEPS = ["ACTIVE", "RETURN_INITIATED", "PICKUP_SCHEDULED", "PICKUP_CONFIRMED", "RECEIVED_BY_MANUFACTURER", "DESTROYED_CERTIFIED"];
 
@@ -16,80 +20,137 @@ export default function BatchDetail() {
     api(`/dashboard/batches/${id}/timeline`).then(setD).catch((e) => setErr(e.message));
   }, [id]);
 
-  if (err) return <p style={{ color: "var(--danger)" }}>{err}</p>;
-  if (!d) return <p>Loading…</p>;
+  if (err) return <Alert tone="danger">{err}</Alert>;
+  if (!d) return <Card><SkeletonRows rows={7} /></Card>;
+
   const b = d.batch;
-  const curIdx = STEPS.indexOf(b.state);
+  const curIdx = STEPS.indexOf(b.state === "DISPUTED" ? "PICKUP_SCHEDULED" : b.state);
 
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <Link href="/registry">← Registry</Link>
-      <div className="card" style={{ padding: 20 }}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <h1 style={{ margin: 0, fontSize: 20 }}>{b.batch_number}</h1>
-          <Badge state={b.state} />
-          {b.non_compliant && <span className="badge red">NON-COMPLIANT</span>}
-          {b.reentry_flagged && <span className="badge red">RE-ENTRY FLAGGED</span>}
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12, marginTop: 12, fontSize: 14 }}>
-          <div><div className="label">Drug</div>{b.drug_name}</div>
-          <div><div className="label">Category</div>{b.category}</div>
-          <div><div className="label">Manufacturer license</div><span className="mono">{b.manufacturer_license_id}</span></div>
-          <div><div className="label">Expiry</div>{String(b.expiry_date).slice(0, 10)}</div>
-          <div><div className="label">Flagged at</div>{b.flagged_at ? String(b.flagged_at).slice(0, 19).replace("T", " ") : "—"}</div>
-        </div>
-      </div>
+    <div className="space-y-5">
+      <Link href="/registry" className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted hover:text-ink">
+        <ArrowLeft size={15} /> Registry Explorer
+      </Link>
 
-      <Card title="Lifecycle progress">
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      <Card>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className="text-[18px] font-semibold text-ink"><Mono className="text-[16px] text-ink">{b.batch_number}</Mono></h1>
+          <StatusBadge value={b.state} />
+          {b.non_compliant && <Badge tone="danger">Non-compliant</Badge>}
+          {b.reentry_flagged && <Badge tone="danger">Re-entry flagged</Badge>}
+        </div>
+        <div className="mt-4">
+          <DataGrid
+            items={[
+              { label: "Drug", value: b.drug_name },
+              { label: "Category", value: b.category },
+              { label: "Manufacturer license", value: <Mono>{b.manufacturer_license_id}</Mono> },
+              { label: "Manufactured", value: String(b.mfg_date).slice(0, 10) },
+              { label: "Expiry", value: String(b.expiry_date).slice(0, 10) },
+              { label: "Flagged at", value: b.flagged_at ? String(b.flagged_at).slice(0, 19).replace("T", " ") : "—" },
+            ]}
+          />
+        </div>
+      </Card>
+
+      <Card title="Lifecycle">
+        <div className="flex flex-wrap items-center gap-1.5">
           {STEPS.map((s, i) => (
-            <div key={s} className="badge" style={{
-              background: i <= curIdx ? "var(--brand)" : "#f1f5f9",
-              color: i <= curIdx ? "#fff" : "#94a3b8",
-            }}>{s.replaceAll("_", " ")}</div>
+            <React.Fragment key={s}>
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11.5px] font-semibold ${
+                  i < curIdx ? "bg-brand-soft text-brand"
+                  : i === curIdx ? "bg-brand text-white"
+                  : "bg-line-soft text-muted"
+                }`}
+              >
+                {s.replaceAll("_", " ")}
+              </span>
+              {i < STEPS.length - 1 && <span className="text-line">—</span>}
+            </React.Fragment>
           ))}
         </div>
+        {b.state === "DISPUTED" && <p className="mt-3 text-[12.5px] font-medium text-danger">Currently disputed — blocked at pickup confirmation.</p>}
       </Card>
 
-      <Card title="Registry integrity">
-        <span className={`badge ${d.verification.valid ? "green" : "red"}`}>
-          {d.verification.valid ? "VALID — hash chain + signatures + ordering ok" : "INVALID"}
-        </span>{" "}
-        <span>{d.verification.event_count} events</span>
+      <Card
+        title="Registry integrity"
+        actions={
+          <Badge tone={d.verification.valid ? "success" : "danger"} dot>
+            {d.verification.valid ? "Valid" : "Invalid"}
+          </Badge>
+        }
+      >
+        <div className="flex flex-wrap gap-4 text-[12.5px] text-ink-soft">
+          {[
+            ["Hash chain", d.verification.hash_chain_valid],
+            ["Signatures", d.verification.signatures_valid],
+            ["Ordering", d.verification.ordering_valid],
+          ].map(([k, ok]) => (
+            <span key={k as string} className="inline-flex items-center gap-1.5">
+              {ok ? <ShieldCheck size={14} className="text-ok" /> : <ShieldX size={14} className="text-danger" />}{k}
+            </span>
+          ))}
+          <span className="text-muted">{d.verification.event_count} events</span>
+        </div>
       </Card>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <Card title="Return"><Pre v={d.return_request} /></Card>
-        <Card title="Dispute"><Pre v={d.dispute} /></Card>
-        <Card title="Manufacturer receipt"><Pre v={d.receipt} /></Card>
-        <Card title="Destruction certificate"><Pre v={d.certificate} /></Card>
+      <div className="grid gap-4 md:grid-cols-2">
+        <RecordCard title="Return request" v={d.return_request} />
+        <RecordCard title="Dispute" v={d.dispute} />
+        <RecordCard title="Manufacturer receipt" v={d.receipt} />
+        <RecordCard title="Destruction certificate" v={d.certificate} />
       </div>
 
       {!!d.reentry_alerts?.length && (
         <Card title="Re-entry alerts">
-          {d.reentry_alerts.map((a: any) => (
-            <div key={a.id}><Link href={`/alerts/${a.id}`}>{a.attempted_retailer}</Link> · {a.attempted_location} · <Badge state={a.status} /></div>
-          ))}
+          <ul className="space-y-2">
+            {d.reentry_alerts.map((a: any) => (
+              <li key={a.id} className="flex items-center gap-2 text-[13px]">
+                <Link href={`/alerts/${a.id}`} className="font-medium text-brand hover:underline">{a.attempted_retailer}</Link>
+                <span className="text-muted">· {a.attempted_location}</span>
+                <StatusBadge value={a.status} />
+              </li>
+            ))}
+          </ul>
         </Card>
       )}
 
-      <Card title="Event timeline">
-        <ol style={{ margin: 0, paddingLeft: 18 }}>
-          {d.timeline.map((e: any) => (
-            <li key={e.seq} style={{ marginBottom: 8 }}>
-              <span className="badge blue">{e.event_type}</span>{" "}
-              <span style={{ color: "var(--muted)" }}>{String(e.created_at).slice(0, 19).replace("T", " ")} · {e.actor}</span>
-              <div className="mono" style={{ color: "var(--muted)" }}>{JSON.stringify(e.payload)}</div>
-              <div className="mono" style={{ color: "var(--muted)", fontSize: 11 }}>hash {e.hash.slice(0, 24)}…</div>
-            </li>
+      <Card title="Activity timeline">
+        <Timeline>
+          {d.timeline.map((e: any, i: number) => (
+            <TimelineItem
+              key={e.seq}
+              tone={toneFor(e.event_type)}
+              title={e.event_type.replaceAll("_", " ")}
+              actor={e.actor}
+              time={String(e.created_at).slice(0, 19).replace("T", " ")}
+              last={i === d.timeline.length - 1}
+            >
+              <Mono className="text-muted">{JSON.stringify(e.payload)}</Mono>
+            </TimelineItem>
           ))}
-        </ol>
+        </Timeline>
       </Card>
     </div>
   );
 }
 
-function Pre({ v }: { v: any }) {
-  if (!v) return <p style={{ color: "var(--muted)" }}>—</p>;
-  return <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0 }}>{JSON.stringify(v, null, 2)}</pre>;
+function RecordCard({ title, v }: { title: string; v: any }) {
+  return (
+    <Card title={title}>
+      {v ? (
+        <dl className="space-y-1.5 text-[12.5px]">
+          {Object.entries(v).map(([k, val]) => (
+            <div key={k} className="flex gap-3">
+              <dt className="w-32 shrink-0 text-muted">{k.replaceAll("_", " ")}</dt>
+              <dd className="min-w-0 break-words text-ink">{String(val)}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="text-[13px] text-muted">Not reached yet.</p>
+      )}
+    </Card>
+  );
 }

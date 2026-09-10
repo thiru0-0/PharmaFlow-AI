@@ -1,52 +1,116 @@
 @import "tailwindcss";
 
-:root {
-  --bg: #f6f7f9;
-  --panel: #ffffff;
-  --ink: #0f172a;
-  --muted: #64748b;
-  --line: #e2e8f0;
-  --brand: #0b5cff;
-  --ok: #067647;
-  --warn: #b45309;
-  --danger: #b91c1c;
+/* ------------------------------------------------------------------ */
+/*  PharmaFlow AI — design tokens                                      */
+/* ------------------------------------------------------------------ */
+@theme {
+  --color-bg: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-surface-2: #fafbfc;
+
+  --color-sidebar: #0f1729;
+  --color-sidebar-2: #131d33;
+  --color-sidebar-hover: #1e293f;
+  --color-sidebar-ink: #aeb8c9;
+  --color-sidebar-ink-dim: #6b7688;
+
+  --color-ink: #0f172a;
+  --color-ink-soft: #47506a;
+  --color-muted: #8b94a6;
+  --color-line: #e8eaee;
+  --color-line-soft: #f0f1f4;
+
+  --color-brand: #2563eb;
+  --color-brand-hover: #1d4ed8;
+  --color-brand-soft: #eef3ff;
+  --color-brand-ring: #bfd3ff;
+
+  --color-ok: #15803d;
+  --color-ok-soft: #e7f6ec;
+  --color-warn: #b45309;
+  --color-warn-soft: #fdf1e3;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fdeceb;
+  --color-info: #1d4ed8;
+  --color-info-soft: #eaf1ff;
+
+  --radius-card: 14px;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
 }
 
-html, body {
-  background: var(--bg);
-  color: var(--ink);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+/* ------------------------------------------------------------------ */
+/*  base — layered so Tailwind utilities always win                    */
+/* ------------------------------------------------------------------ */
+@layer base {
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--color-bg);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  h1, h2, h3, h4 {
+    font-weight: 650;
+    letter-spacing: -0.011em;
+    margin: 0;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  ::selection {
+    background: var(--color-brand-ring);
+  }
 }
 
-* { box-sizing: border-box; }
-
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
-.btn {
-  display: inline-flex; align-items: center; gap: 6px; justify-content: center;
-  border-radius: 8px; padding: 8px 14px; font-weight: 600; font-size: 14px;
-  background: var(--brand); color: #fff; border: 1px solid transparent; cursor: pointer;
-  transition: filter .12s ease;
+/* ------------------------------------------------------------------ */
+/*  helpers (unlayered — bespoke classes, no utility conflict)         */
+/* ------------------------------------------------------------------ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d3d7df transparent;
 }
-.btn:hover { filter: brightness(1.06); }
-.btn:disabled { opacity: .5; cursor: not-allowed; }
-.btn.secondary { background: #fff; color: var(--ink); border-color: var(--line); }
-.btn.danger { background: var(--danger); }
-.btn.ok { background: var(--ok); }
-.input {
-  width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
-  font-size: 14px; background: #fff; color: var(--ink);
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
-.label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; padding: 10px 12px; border-bottom: 1px solid var(--line); }
-td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
-tr:last-child td { border-bottom: none; }
+*::-webkit-scrollbar-thumb {
+  background: #d3d7df;
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #b9bfca;
+  background-clip: content-box;
+}
 
-.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid transparent; }
-.badge.gray { background: #f1f5f9; color: #475569; }
-.badge.blue { background: #e0edff; color: #0b5cff; }
-.badge.green { background: #dcfce7; color: #067647; }
-.badge.amber { background: #fef3c7; color: #b45309; }
-.badge.red { background: #fee2e2; color: #b91c1c; }
+@keyframes pf-spin { to { transform: rotate(360deg); } }
+@keyframes pf-fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes pf-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 
-.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+.pf-anim-in { animation: pf-fade .16s ease both; }
+.pf-skeleton {
+  background: linear-gradient(90deg, #eef0f3, #f6f7f9, #eef0f3);
+  background-size: 200% 100%;
+  animation: pf-pulse 1.4s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; }

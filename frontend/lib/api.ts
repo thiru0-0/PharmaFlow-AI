@@ -46,6 +46,14 @@ export async function api<T = any>(
   });
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new ApiError(res.status, data?.detail ?? data);
+  if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined" && opts.auth !== false) {
+      clearSession();
+      if (!window.location.pathname.startsWith("/login") && window.location.pathname !== "/") {
+        window.location.href = "/";
+      }
+    }
+    throw new ApiError(res.status, data?.detail ?? data);
+  }
   return data as T;
 }

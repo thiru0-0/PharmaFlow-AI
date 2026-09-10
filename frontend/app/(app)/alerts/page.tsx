@@ -1,34 +1,52 @@
 "use client";
 import React from "react";
 import Link from "next/link";
+import { ShieldAlert, ShieldCheck, ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
-import { Badge, Card, useAsync } from "@/lib/ui";
+import { Badge, Button, Card, EmptyState, Mono, PageHeader, SkeletonRows, StatusBadge, Table, Td, Tr, useAsync } from "@/lib/ui";
 
 export default function AlertsPage() {
   const alerts = useAsync<any[]>(() => api("/alerts/reentry"), []);
+  const open = (alerts.data || []).filter((a) => a.status === "OPEN").length;
+
   return (
-    <div style={{ display: "grid", gap: 20 }}>
-      <h1 style={{ margin: 0 }}>Re-entry Alerts</h1>
-      <Card title="All alerts" right={<button className="btn secondary" onClick={alerts.reload}>Refresh</button>}>
-        <table>
-          <thead><tr><th>Severity</th><th>Batch</th><th>Attempted by</th><th>Location</th><th>Qty</th><th>Notified</th><th>Latency</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-            {(alerts.data || []).map((a) => (
-              <tr key={a.id}>
-                <td><Badge state={a.severity} /></td>
-                <td className="mono">{a.batch_number}</td>
-                <td>{a.attempted_retailer}</td>
-                <td>{a.attempted_location}</td>
-                <td>{a.attempted_quantity}</td>
-                <td>{a.notified_controller ? "ctrl ✓" : "ctrl ✗"} · {a.notified_manufacturer ? "mfr ✓" : "mfr ✗"}</td>
-                <td>{a.notification_latency_ms} ms</td>
-                <td><Badge state={a.status} /></td>
-                <td><Link className="btn secondary" style={{ fontSize: 12, padding: "4px 8px" }} href={`/alerts/${a.id}`}>Open</Link></td>
-              </tr>
-            ))}
-            {!alerts.data?.length && <tr><td colSpan={9} style={{ color: "var(--muted)" }}>No alerts.</td></tr>}
-          </tbody>
-        </table>
+    <div className="space-y-6">
+      <PageHeader
+        title="Re-entry Alerts"
+        description="Blocked point-of-sale attempts on batches already in the return pipeline."
+        actions={
+          <Badge tone={open ? "danger" : "success"} dot>
+            {open ? `${open} open` : "All clear"}
+          </Badge>
+        }
+      />
+
+      <Card padded={false}>
+        <div className="p-5">
+          {alerts.loading ? <SkeletonRows /> : alerts.data?.length ? (
+            <Table head={["Severity", "Batch", "Attempted by", "Location", "Qty", "Notified", "Latency", "Status", ""]}>
+              {alerts.data.map((a) => (
+                <Tr key={a.id}>
+                  <Td><Badge tone="danger"><ShieldAlert size={12} /> {a.severity}</Badge></Td>
+                  <Td className="text-ink"><Mono>{a.batch_number}</Mono></Td>
+                  <Td>{a.attempted_retailer}</Td>
+                  <Td className="text-muted">{a.attempted_location}</Td>
+                  <Td className="tabular-nums">{a.attempted_quantity}</Td>
+                  <Td className="text-[12px] text-muted">
+                    ctrl {a.notified_controller ? "✓" : "✗"} · mfr {a.notified_manufacturer ? "✓" : "✗"}
+                  </Td>
+                  <Td className="tabular-nums">{a.notification_latency_ms} ms</Td>
+                  <Td><StatusBadge value={a.status} /></Td>
+                  <Td className="text-right">
+                    <Link href={`/alerts/${a.id}`}><Button size="sm" variant="secondary">Open <ArrowRight size={13} /></Button></Link>
+                  </Td>
+                </Tr>
+              ))}
+            </Table>
+          ) : (
+            <EmptyState icon={<ShieldCheck size={20} />} title="No re-entry alerts" description="If a returned batch is scanned for sale anywhere in the network, it will be blocked and listed here." />
+          )}
+        </div>
       </Card>
     </div>
   );

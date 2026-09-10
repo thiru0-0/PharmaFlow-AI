@@ -1,8 +1,9 @@
 "use client";
 import React from "react";
+import { Camera, CameraOff } from "lucide-react";
+import { Button } from "@/lib/ui";
 
 export default function Scanner({ onScan }: { onScan: (text: string) => void }) {
-  const ref = React.useRef<HTMLDivElement>(null);
   const [on, setOn] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
   const instRef = React.useRef<any>(null);
@@ -22,8 +23,8 @@ export default function Scanner({ onScan }: { onScan: (text: string) => void }) 
           (text: string) => { onScan(text); stop(); },
           () => {}
         );
-      } catch (e: any) {
-        setErr("Camera unavailable — use the manual / demo scan below.");
+      } catch {
+        setErr("Camera unavailable — use the manual field or a demo-scan chip below.");
         setOn(false);
       }
     })();
@@ -39,15 +40,21 @@ export default function Scanner({ onScan }: { onScan: (text: string) => void }) 
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-        {!on ? (
-          <button className="btn secondary" onClick={() => { setErr(null); setOn(true); }}>Open camera scanner</button>
-        ) : (
-          <button className="btn secondary" onClick={stop}>Stop camera</button>
-        )}
-      </div>
-      <div id="pf-scanner-region" ref={ref} style={{ width: on ? 280 : 0, height: on ? 280 : 0, overflow: "hidden", borderRadius: 8 }} />
-      {err && <p style={{ color: "var(--warn)", fontSize: 13 }}>{err}</p>}
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        icon={on ? <CameraOff size={14} /> : <Camera size={14} />}
+        onClick={() => (on ? stop() : (setErr(null), setOn(true)))}
+      >
+        {on ? "Stop camera" : "Open camera scanner"}
+      </Button>
+      <div
+        id="pf-scanner-region"
+        className="mt-3 overflow-hidden rounded-xl bg-sidebar"
+        style={{ width: on ? 280 : 0, height: on ? 280 : 0 }}
+      />
+      {err && <p className="mt-2 text-[12px] font-medium text-warn">{err}</p>}
     </div>
   );
 }
