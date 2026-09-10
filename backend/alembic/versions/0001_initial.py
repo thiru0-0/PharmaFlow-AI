@@ -25,7 +25,7 @@ depends_on = None
 def upgrade() -> None:
     bind = op.get_bind()
     Base.metadata.create_all(bind=bind)
-    install_guards(bind.engine)
+    install_guards(bind)
 
 
 def downgrade() -> None:

@@ -6,7 +6,7 @@ skip a state or attach an orphan certificate. Dialect-specific (SQLite + Postgre
 from __future__ import annotations
 
 from sqlalchemy import text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 
 _LEGAL = """
     (OLD.state = 'ACTIVE' AND NEW.state IN ('ACTIVE','RETURN_INITIATED'))
@@ -84,8 +84,13 @@ _PG = [
 ]
 
 
-def install_guards(engine: Engine) -> None:
-    stmts = _SQLITE if engine.dialect.name == "sqlite" else _PG
-    with engine.begin() as conn:
+def install_guards(bind: Engine | Connection) -> None:
+    """Accepts an Engine (opens its own tx) or a live Connection (e.g. an Alembic migration)."""
+    stmts = _SQLITE if bind.dialect.name == "sqlite" else _PG
+    if isinstance(bind, Connection):
+        for s in stmts:
+            bind.execute(text(s))
+        return
+    with bind.begin() as conn:
         for s in stmts:
             conn.execute(text(s))

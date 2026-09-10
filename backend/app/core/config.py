@@ -57,11 +57,23 @@ class Settings(BaseSettings):
 _SQLITE_DEFAULT = f"sqlite:///{(BASE_DIR / 'pharmaflow_dev.db').as_posix()}"
 
 
+def _normalize_db_url(url: str) -> str:
+    url = (url or "").strip()
+    if not url:
+        return _SQLITE_DEFAULT
+    # Accept the raw strings Postgres hosts (Supabase, Neon, Heroku, ...) hand out and
+    # bind them to the installed driver (psycopg v3).
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
+
+
 @lru_cache
 def get_settings() -> Settings:
     s = Settings()
-    if not s.DATABASE_URL or not s.DATABASE_URL.strip():
-        s.DATABASE_URL = _SQLITE_DEFAULT
+    s.DATABASE_URL = _normalize_db_url(s.DATABASE_URL)
     Path(s.KEYS_DIR).mkdir(parents=True, exist_ok=True)
     Path(s.UPLOADS_DIR).mkdir(parents=True, exist_ok=True)
     return s
