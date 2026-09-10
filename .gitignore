@@ -42,3 +42,5 @@ backend/pharmaflow_dev.db-*
 backend/pharmaflow_test.db-*
 *.db-shm
 *.db-wal
+backend/pf_probe.db
+backend/pharmaflow_test.db

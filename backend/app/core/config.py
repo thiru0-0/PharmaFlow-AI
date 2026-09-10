@@ -54,9 +54,14 @@ class Settings(BaseSettings):
         return self.DATABASE_URL.startswith("sqlite")
 
 
+_SQLITE_DEFAULT = f"sqlite:///{(BASE_DIR / 'pharmaflow_dev.db').as_posix()}"
+
+
 @lru_cache
 def get_settings() -> Settings:
     s = Settings()
+    if not s.DATABASE_URL or not s.DATABASE_URL.strip():
+        s.DATABASE_URL = _SQLITE_DEFAULT
     Path(s.KEYS_DIR).mkdir(parents=True, exist_ok=True)
     Path(s.UPLOADS_DIR).mkdir(parents=True, exist_ok=True)
     return s

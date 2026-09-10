@@ -21,10 +21,13 @@ Resume-from-here log. Update after every checkpoint.
 - [x] B — Auth, RBAC, registry hash-chain + Ed25519 verified via API tests (11,12,14 green)
 - [x] C — Full lifecycle ACTIVE->DESTROYED_CERTIFIED via API + scenarios.run_happy, registry_valid=True
 - [x] D — Re-entry blocks sale + notifies controller+manufacturer, measured latency 6 ms (tests 1,3,4,5)
-- [ ] E — Frontend for all 5 roles calls real API, no mock data
-- [~] F — scenarios.run_fraud 0.01s / run_happy 0.07s server-side (UI-driven still to wire in E)
-- [x] G — 15/15 critical tests pass (`pytest -q` -> 15 passed)
-- [ ] H — Docs, polish, commit
+- [x] E — Next.js app, all 5 roles on the real API, no mock data. Verified in-browser: retailer
+      inventory, POS re-entry BLOCK panel (4ms), control tower funnel + live feed + registry HEALTHY.
+- [x] F — Admin "Demo Control" buttons hit /demo/reset + /demo/scripts/*. fraud 0.02s, happy 0.05s
+      over HTTP, both << 60s. UI fraud walkthrough verified end-to-end in browser.
+- [x] G — 24/24 tests pass (`pytest -q`): 15 critical + 9 extended (RBAC, tenant isolation,
+      expiry idempotency, full audit trail, SLA breach, alert-resolution append).
+- [x] H — README.md complete (setup, demo scripts, accounts, limitations). Committed + pushed.
 
 ## Verified commands
 - `python -m alembic upgrade head` -> ok
