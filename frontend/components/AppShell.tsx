@@ -134,7 +134,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface/90 px-4 backdrop-blur sm:px-6">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-line bg-surface px-4 sm:px-6">
           <button className="text-ink-soft lg:hidden" onClick={() => setMobileOpen(true)}>
             <Menu size={20} />
           </button>
