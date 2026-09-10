@@ -127,9 +127,12 @@ def optimize_route(body: RouteOptimizeIn, user: CurrentUser, db: DbDep, _=dist_o
 
 @router.get("/routes")
 def list_routes(user: CurrentUser, db: DbDep, _=dist_only):
-    rs = db.execute(
-        select(PickupRoute).where(PickupRoute.distributor_id == user.id).order_by(PickupRoute.created_at.desc())
-    ).scalars().all()
+    rs = [
+        r for r in db.execute(
+            select(PickupRoute).where(PickupRoute.distributor_id == user.id).order_by(PickupRoute.created_at.desc())
+        ).scalars().all()
+        if r.stops
+    ]
     return [
         {
             "id": r.id, "algorithm": r.algorithm, "ortools_used": r.algorithm == "ortools_cvrp",

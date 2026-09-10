@@ -152,12 +152,27 @@ def seed(db: Session) -> dict:
     db.add(PosTransaction(batch_id=C.id, retailer_id=rb.id, quantity=8,
                           scanned_at=now - timedelta(days=20)))
     rrC = ReturnRequest(batch_id=C.id, retailer_id=rb.id, distributor_id=dist.id,
-                        status=ReturnStatus.AUTO_CREATED.value, expiry_date=C.expiry_date)
+                        quantity_reported=22, condition="sealed", photo_url="mock://uploads/return-C.jpg",
+                        status=ReturnStatus.AUTO_CREATED.value, expiry_date=C.expiry_date, confirmed_at=now)
     db.add(rrC)
     db.flush()
     batch_state.transition(db, C, BatchState.RETURN_INITIATED, actor=None,
                            event_type="RETURN_AUTO_CREATED",
                            payload={"return_request_id": rrC.id, "trigger": "expiry_crossed"})
+
+    # H, I — extra expired returns with counted quantities so the route optimizer has a
+    # genuine multi-stop problem (retailer A + retailer B, different areas).
+    for letter, retailer, qty, serial, dte in [("H", ra, 45, "H0001", -6), ("I", rb, 18, "I0001", -11)]:
+        bx = mk_batch(letter, "Azithromycin 500mg Tablets", dte, mfr, serial)
+        hold(bx, retailer, 0)
+        rrx = ReturnRequest(batch_id=bx.id, retailer_id=retailer.id, distributor_id=dist.id,
+                            quantity_reported=qty, condition="sealed", photo_url=f"mock://uploads/return-{letter}.jpg",
+                            status=ReturnStatus.RETURN_INITIATED.value, expiry_date=bx.expiry_date, confirmed_at=now)
+        db.add(rrx)
+        db.flush()
+        batch_state.transition(db, bx, BatchState.RETURN_INITIATED, actor=retailer,
+                               event_type="RETURN_INITIATED",
+                               payload={"return_request_id": rrx.id, "quantity_reported": qty})
 
     # D — fraud demo: expired, still ACTIVE, retailer A holds it, will initiate return live
     D = mk_batch("D", "Azithromycin 500mg Tablets", -2, mfr, "D0001")
