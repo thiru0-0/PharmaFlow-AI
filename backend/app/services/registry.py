@@ -90,6 +90,16 @@ def record_event(
     )
     db.add(evt)
     db.flush()
+
+    from app.services import events as _events
+
+    _events.enqueue(
+        db, "registry",
+        event_type=event_type, batch_id=batch.id, batch_number=batch.batch_number,
+        manufacturer_license_id=batch.manufacturer_license_id, manufacturer_id=batch.manufacturer_id,
+        actor=signer_name, actor_id=actor.id if actor else None,
+        seq=seq, hash=h, at=created_at_iso, state=batch.state,
+    )
     return evt
 
 

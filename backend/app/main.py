@@ -16,8 +16,10 @@ from app.api import (
     disputes,
     distributor,
     manufacturer,
+    notifications,
     registry,
     retailer,
+    stream,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -26,9 +28,13 @@ log = logging.getLogger("pharmaflow")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+
     from app.db.base import Base, engine
     import app.models  # noqa: F401  (register mappers)
+    from app.services import events  # noqa: F401  (registers after_commit listener)
 
+    events.bind_loop(asyncio.get_running_loop())
     Base.metadata.create_all(bind=engine)
     # warm one pooled connection so the first real request doesn't pay the TLS handshake
     try:
@@ -77,5 +83,6 @@ def health():
             "db": "sqlite" if settings.is_sqlite else "postgres"}
 
 
-for r in (auth, retailer, distributor, manufacturer, disputes, registry, alerts, dashboard, demo):
+for r in (auth, retailer, distributor, manufacturer, disputes, registry, alerts,
+          dashboard, notifications, demo, stream):
     app.include_router(r.router)

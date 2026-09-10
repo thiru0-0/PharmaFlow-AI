@@ -32,6 +32,8 @@ def notify(
     channels: list[str],
     batch_id: str | None = None,
 ) -> list[Notification]:
+    from app.services import events
+
     out = []
     for ch in channels:
         n = Notification(
@@ -46,6 +48,15 @@ def notify(
         db.add(n)
         out.append(n)
     db.flush()
+
+    for n in out:
+        if n.channel == "in_app":
+            events.enqueue(
+                db, "notification",
+                id=n.id, recipient_id=n.recipient_id, recipient_label=n.recipient_label,
+                type=n.type, payload=n.payload, batch_id=n.batch_id,
+                at=str(n.created_at or ""),
+            )
     return out
 
 

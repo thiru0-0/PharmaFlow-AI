@@ -106,4 +106,12 @@ def check_and_handle(
     alert.notification_latency_ms = int((time.perf_counter() - t0) * 1000)
     db.add(alert)
     db.flush()
+
+    from app.services import events
+
+    events.enqueue(
+        db, "reentry", action="blocked", alert_id=alert.id, batch_id=batch.id,
+        batch_number=batch.batch_number, retailer_id=retailer.id,
+        manufacturer_id=batch.manufacturer_id, at=str(alert.triggered_at or ""),
+    )
     return alert
