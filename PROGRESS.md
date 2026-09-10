@@ -49,6 +49,14 @@ set backend/.env DATABASE_URL=postgresql+psycopg://... then `alembic upgrade hea
   PowerShell `Get-NetTCPConnection -LocalPort 8000` then Stop-Process (watch for the
   multiprocessing spawn child if you used --reload).
 
+## Frontend redesign (done)
+Premium pharma-SaaS visual pass — navy sidebar shell, `lib/ui.tsx` component system,
+Inter, semantic badges, modals replacing prompts, chain-of-custody timelines. All routes
+verified in-browser against the live Supabase-backed API. Commit 2736615.
+Gotcha logged: never run `next build` while `next dev` is running — it corrupts `.next`
+and the dev server 500s; `rm -rf frontend/.next` + restart fixes it.
+DB note: `postgres://` URLs auto-normalize to `postgresql+psycopg://` in config.py.
+
 ## Honestly not done (P1/P2)
 - Postgres never actually exercised (no server on this machine; user to supply DATABASE_URL).
 - WebSocket streaming (3.5s poll instead), offline IndexedDB queue, Docker Compose, Mapbox
