@@ -30,6 +30,14 @@ async def lifespan(app: FastAPI):
     import app.models  # noqa: F401  (register mappers)
 
     Base.metadata.create_all(bind=engine)
+    # warm one pooled connection so the first real request doesn't pay the TLS handshake
+    try:
+        from sqlalchemy import text
+
+        with engine.connect() as c:
+            c.execute(text("SELECT 1"))
+    except Exception:
+        log.exception("db warmup failed")
     if settings.APP_ENV != "test":
         try:
             from app.jobs.scheduler import start

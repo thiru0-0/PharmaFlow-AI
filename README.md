@@ -87,13 +87,22 @@ OpenAPI docs: <http://localhost:8000/docs> · health: <http://localhost:8000/hea
 cd frontend
 npm install
 cp .env.example .env.local          # NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# For a demo — fast route loads, no per-page compile:
+npm run build && npm start
+
+# Or for development:
 npm run dev
 ```
 
 Open <http://localhost:3000>.
 
-> **Windows note:** if the repo path contains `&` or spaces, `npm run dev` is already wired to call
-> `node node_modules/next/dist/bin/next` directly to avoid the npm shim breaking on those paths.
+> **Windows note:** the npm scripts call `node node_modules/next/dist/bin/next` directly so the npm
+> shim doesn't break on repo paths that contain `&` or spaces.
+>
+> **Demo tip:** use `npm run build && npm start`, not `npm run dev`. Dev mode compiles each route on
+> first visit (2–4 s of lag the first time you open a page); the production server serves them
+> instantly. Never run `npm run build` while `npm run dev` is running — it corrupts `.next`.
 
 ### 3. Tests
 

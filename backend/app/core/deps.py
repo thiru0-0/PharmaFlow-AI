@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.security import decode_token
 from app.db.base import get_db
@@ -23,7 +24,9 @@ def get_current_user(
         payload = decode_token(token)
     except Exception:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token")
-    user = db.get(User, payload.get("sub"))
+    user = db.execute(
+        select(User).options(joinedload(User.license)).where(User.id == payload.get("sub"))
+    ).scalars().first()
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
     return user

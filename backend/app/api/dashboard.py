@@ -64,7 +64,7 @@ def summary(user: CurrentUser, db: DbDep):
         open_disputes = [d for d in open_disputes if d.batch_id in scope]
         alerts = [a for a in alerts if a.batch_id in scope]
 
-    health = reg.verify_all(db) if user.role in (Role.ADMIN.value, Role.STATE_DRUG_CONTROLLER.value) else None
+    health = reg.verify_all(db, use_cache=True) if user.role in (Role.ADMIN.value, Role.STATE_DRUG_CONTROLLER.value) else None
     total_terminal = funnel[BatchState.DESTROYED_CERTIFIED.value]
     total = len(batches) or 1
 
@@ -123,7 +123,9 @@ def events_stream(user: CurrentUser, db: DbDep, since_id: int = 0, limit: int = 
 
 @router.get("/directory")
 def directory(user: CurrentUser, db: DbDep):
-    users = db.execute(select(User)).scalars().all()
+    from sqlalchemy.orm import joinedload
+
+    users = db.execute(select(User).options(joinedload(User.license))).scalars().all()
     return [
         {
             "id": u.id, "name": u.name, "role": u.role, "location": u.location_name,

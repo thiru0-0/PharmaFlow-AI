@@ -61,18 +61,44 @@ def _dispute_view(db, d: Dispute) -> dict:
 
 @router.get("")
 def list_disputes(user: CurrentUser, db: DbDep):
-    q = select(Dispute).order_by(Dispute.created_at.desc())
-    disputes = db.execute(q).scalars().all()
-    views = [_dispute_view(db, d) for d in disputes]
-    if user.role in (Role.STATE_DRUG_CONTROLLER.value, Role.ADMIN.value):
-        return views
-    # entity roles see only their own
+    rows = db.execute(
+        select(Dispute, Pickup, ReturnRequest, Batch)
+        .join(Pickup, Pickup.id == Dispute.pickup_id)
+        .join(ReturnRequest, ReturnRequest.id == Pickup.return_request_id)
+        .join(Batch, Batch.id == Dispute.batch_id)
+        .order_by(Dispute.created_at.desc())
+    ).all()
+    if not rows:
+        return []
+    user_ids = {rr.retailer_id for _, _, rr, _ in rows} | {pk.distributor_id for _, pk, _, _ in rows}
+    names = dict(db.execute(select(User.id, User.name).where(User.id.in_(user_ids))).all())
+    ev_by_dispute: dict[str, list] = {}
+    for e in db.execute(
+        select(DisputeEvidence).where(DisputeEvidence.dispute_id.in_([d.id for d, *_ in rows]))
+        .order_by(DisputeEvidence.created_at)
+    ).scalars().all():
+        ev_by_dispute.setdefault(e.dispute_id, []).append(e)
+    if ev_by_dispute:
+        ev_user_ids = {e.submitted_by for evs in ev_by_dispute.values() for e in evs}
+        names.update(dict(db.execute(select(User.id, User.name).where(User.id.in_(ev_user_ids))).all()))
+
     out = []
-    for d, v in zip(disputes, views):
-        pickup = db.get(Pickup, d.pickup_id)
-        rr = db.get(ReturnRequest, pickup.return_request_id)
-        if user.id in (rr.retailer_id, pickup.distributor_id):
-            out.append(v)
+    for d, pk, rr, b in rows:
+        if user.role not in (Role.STATE_DRUG_CONTROLLER.value, Role.ADMIN.value) and user.id not in (rr.retailer_id, pk.distributor_id):
+            continue
+        out.append({
+            "id": d.id, "batch_id": b.id, "batch_number": b.batch_number, "batch_state": b.state,
+            "retailer": names.get(rr.retailer_id), "distributor": names.get(pk.distributor_id),
+            "reported_qty": d.reported_qty, "confirmed_qty": d.confirmed_qty,
+            "difference": abs(d.reported_qty - d.confirmed_qty), "tolerance_units": round(d.tolerance_units, 2),
+            "status": d.status, "reconciled_qty": d.reconciled_qty, "resolution_notes": d.resolution_notes,
+            "retailer_photo": rr.photo_url, "distributor_photo": pk.photo_url,
+            "created_at": d.created_at, "resolved_at": d.resolved_at,
+            "evidence": [
+                {"by": names.get(e.submitted_by), "note": e.note, "file_url": e.file_url, "at": e.created_at}
+                for e in ev_by_dispute.get(d.id, [])
+            ],
+        })
     return out
 
 

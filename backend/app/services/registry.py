@@ -102,16 +102,17 @@ def _system_license_id(db: Session) -> str:
     return "system-registry"
 
 
-def verify_batch_chain(db: Session, batch: Batch) -> dict:
-    events = (
-        db.execute(
-            select(RegistryEvent)
-            .where(RegistryEvent.batch_id == batch.id)
-            .order_by(RegistryEvent.seq.asc())
+def verify_batch_chain(db: Session, batch: Batch, events: list[RegistryEvent] | None = None) -> dict:
+    if events is None:
+        events = (
+            db.execute(
+                select(RegistryEvent)
+                .where(RegistryEvent.batch_id == batch.id)
+                .order_by(RegistryEvent.seq.asc())
+            )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
-    )
     problems: list[dict] = []
     prev_hash = GENESIS
     prev_ts: datetime | None = None
@@ -192,14 +193,40 @@ def build_checkpoint(db: Session) -> RegistryCheckpoint | None:
     return cp
 
 
-def verify_all(db: Session) -> dict:
+_HEALTH_CACHE: dict = {"at": 0.0, "sig": None, "value": None}
+_HEALTH_TTL = 20.0  # seconds
+
+
+def verify_all(db: Session, *, use_cache: bool = False) -> dict:
+    """Verify every batch chain. One query for all events, grouped in memory.
+
+    With use_cache=True the result is memoised for a few seconds and invalidated
+    whenever a new event id appears — so the dashboard can call it on every load
+    without re-walking every chain each time.
+    """
+    import time
+
+    max_id, count = db.execute(
+        select(func.coalesce(func.max(RegistryEvent.id), 0), func.count(RegistryEvent.id))
+    ).one()
+    sig = (max_id, count)
+
+    if use_cache and _HEALTH_CACHE["sig"] == sig and (time.monotonic() - _HEALTH_CACHE["at"]) < _HEALTH_TTL:
+        return _HEALTH_CACHE["value"]
+
     batches = db.execute(select(Batch)).scalars().all()
-    results = [verify_batch_chain(db, b) for b in batches]
-    total_events = db.execute(select(func.count(RegistryEvent.id))).scalar_one()
+    all_events = db.execute(select(RegistryEvent).order_by(RegistryEvent.seq.asc())).scalars().all()
+    by_batch: dict[str, list[RegistryEvent]] = {}
+    for e in all_events:
+        by_batch.setdefault(e.batch_id, []).append(e)
+
+    results = [verify_batch_chain(db, b, by_batch.get(b.id, [])) for b in batches]
     breaches = [r for r in results if not r["valid"]]
-    return {
+    value = {
         "batches_checked": len(results),
-        "total_events": total_events,
+        "total_events": count,
         "breaches": breaches,
         "healthy": len(breaches) == 0,
     }
+    _HEALTH_CACHE.update(at=time.monotonic(), sig=sig, value=value)
+    return value
