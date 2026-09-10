@@ -4,8 +4,9 @@ import { Scale, Paperclip, Gavel, ArrowLeftRight } from "lucide-react";
 import { api, currentUser } from "@/lib/api";
 import {
   Alert, Badge, Button, Card, EmptyState, Field, InlineError, Input, Mono, Modal,
-  PageHeader, PromptModal, SkeletonRows, StatusBadge, Table, Td, Timeline, TimelineItem, Tr, useAsync,
+  PageHeader, PromptModal, SkeletonRows, StatusBadge, Table, Td, Timeline, TimelineItem, Tr,
 } from "@/lib/ui";
+import { useLiveQuery } from "@/lib/realtime";
 
 function priorityOf(d: any): { tone: "danger" | "warning" | "neutral"; label: string } {
   const ratio = d.tolerance_units ? d.difference / d.tolerance_units : d.difference;
@@ -15,7 +16,7 @@ function priorityOf(d: any): { tone: "danger" | "warning" | "neutral"; label: st
 }
 
 export default function DisputesPage() {
-  const disputes = useAsync<any[]>(() => api("/disputes"), []);
+  const disputes = useLiveQuery<any[]>(() => api("/disputes"), [], { kinds: ["registry"] });
   const role = currentUser<any>()?.role;
   const [sel, setSel] = React.useState<any>(null);
   const [msg, setMsg] = React.useState<{ tone: "success" | "danger"; text: string } | null>(null);

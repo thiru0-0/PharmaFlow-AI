@@ -5,13 +5,14 @@ import { Route, MapPin, PackageCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import {
   Alert, Badge, Button, Card, EmptyState, InlineError, Mono, PageHeader,
-  PromptModal, SkeletonRows, StatusBadge, Table, Td, Tr, useAsync,
+  PromptModal, SkeletonRows, StatusBadge, Table, Td, Tr,
 } from "@/lib/ui";
+import { useLiveQuery } from "@/lib/realtime";
 
 export default function DistributorPage() {
-  const pending = useAsync<any[]>(() => api("/distributor/returns/pending"), []);
-  const pickups = useAsync<any[]>(() => api("/distributor/pickups"), []);
-  const routes = useAsync<any[]>(() => api("/distributor/routes"), []);
+  const pending = useLiveQuery<any[]>(() => api("/distributor/returns/pending"), [], { kinds: ["registry"] });
+  const pickups = useLiveQuery<any[]>(() => api("/distributor/pickups"), [], { kinds: ["registry"] });
+  const routes = useLiveQuery<any[]>(() => api("/distributor/routes"), [], { kinds: ["registry"] });
   const [msg, setMsg] = React.useState<{ tone: "success" | "danger" | "info"; text: string } | null>(null);
   const [optimizing, setOptimizing] = React.useState(false);
   const [confirmRow, setConfirmRow] = React.useState<any>(null);

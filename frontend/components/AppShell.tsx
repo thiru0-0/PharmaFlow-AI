@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { currentUser, clearSession, getToken } from "@/lib/api";
 import { cn } from "@/lib/ui";
+import { useRealtime } from "@/lib/realtime";
+import NotifBell from "@/components/NotifBell";
 
 type Item = { href: string; label: string; icon: React.ReactNode; roles: string[]; group: string };
 
@@ -56,6 +58,7 @@ function initials(name = "") {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const r = useRouter();
+  const { connected } = useRealtime();
   const [user, setUser] = React.useState<any>(null);
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -136,8 +139,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Menu size={20} />
           </button>
           <h2 className="text-[15px] font-semibold text-ink">{titleFor(path)}</h2>
+          <span
+            className={cn(
+              "ml-2 hidden items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium sm:inline-flex",
+              connected ? "bg-ok-soft text-ok" : "bg-warn-soft text-warn"
+            )}
+            title={connected ? "Live updates connected" : "Reconnecting — falling back to polling"}
+          >
+            <span className={cn("h-1.5 w-1.5 rounded-full", connected ? "bg-ok" : "bg-warn animate-[pf-pulse_1.4s_ease-in-out_infinite]")} />
+            {connected ? "Live" : "Reconnecting"}
+          </span>
 
-          <div className="relative ml-auto">
+          <div className="relative ml-auto flex items-center gap-1">
+            <NotifBell />
             <button
               onClick={() => setMenuOpen((v) => !v)}
               className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-line-soft"
@@ -152,7 +166,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <ChevronDown size={15} className="text-muted" />
             </button>
             {menuOpen && (
-              <div className="pf-anim-in absolute right-0 mt-1.5 w-52 rounded-xl bg-surface p-1.5 shadow-lg ring-1 ring-line">
+              <div className="pf-anim-in absolute right-0 z-50 mt-1.5 w-52 rounded-xl bg-surface p-1.5 shadow-xl ring-1 ring-line">
                 <div className="px-2.5 py-2 text-[12px] text-muted">
                   Signed in as
                   <div className="mt-0.5 truncate font-semibold text-ink">{user.name}</div>

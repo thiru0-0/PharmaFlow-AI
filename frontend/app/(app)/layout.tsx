@@ -1,5 +1,10 @@
 import AppShell from "@/components/AppShell";
+import { RealtimeProvider } from "@/lib/realtime";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+  return (
+    <RealtimeProvider>
+      <AppShell>{children}</AppShell>
+    </RealtimeProvider>
+  );
 }

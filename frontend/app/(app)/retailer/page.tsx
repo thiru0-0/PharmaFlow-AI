@@ -5,14 +5,15 @@ import { Boxes, PackageX, Bell, ShieldAlert, ArrowRight } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import {
   Alert, Badge, Button, Card, DataGrid, EmptyState, Field, InlineError, Input,
-  Mono, PageHeader, PromptModal, SkeletonRows, StatusBadge, Table, Td, Tr, useAsync,
+  Mono, PageHeader, PromptModal, SkeletonRows, StatusBadge, Table, Td, Tr,
 } from "@/lib/ui";
+import { useLiveQuery } from "@/lib/realtime";
 import Scanner from "@/components/Scanner";
 
 export default function RetailerPage() {
-  const batches = useAsync<any[]>(() => api("/retailer/batches"), []);
-  const returns = useAsync<any[]>(() => api("/retailer/returns"), []);
-  const notifs = useAsync<any[]>(() => api("/dashboard/notifications"), []);
+  const batches = useLiveQuery<any[]>(() => api("/retailer/batches"), [], { kinds: ["registry"] });
+  const returns = useLiveQuery<any[]>(() => api("/retailer/returns"), [], { kinds: ["registry"] });
+  const notifs = useLiveQuery<any[]>(() => api("/notifications").then((r: any) => r.items), [], { kinds: ["notification"] });
 
   const [qr, setQr] = React.useState("");
   const [qty, setQty] = React.useState(1);

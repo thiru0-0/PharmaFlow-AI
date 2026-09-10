@@ -5,8 +5,9 @@ import { Activity, Boxes, Download, ShieldCheck, ShieldX, TriangleAlert } from "
 import { api, API, getToken } from "@/lib/api";
 import {
   Alert, Badge, Button, Card, EmptyState, Mono, PageHeader, SkeletonRows,
-  StatCard, StatusBadge, Table, Td, Tr, useAsync,
+  StatCard, StatusBadge, Table, Td, Tr,
 } from "@/lib/ui";
+import { onLive, useLiveQuery, useRealtime } from "@/lib/realtime";
 
 const FUNNEL = [
   "ACTIVE", "RETURN_INITIATED", "PICKUP_SCHEDULED", "DISPUTED",
@@ -14,32 +15,48 @@ const FUNNEL = [
 ];
 
 export default function Dashboard() {
-  const sum = useAsync<any>(() => api("/dashboard/summary"), []);
-  const dir = useAsync<any[]>(() => api("/dashboard/directory"), []);
+  const { connected } = useRealtime();
+  const sum = useLiveQuery<any>(() => api("/dashboard/summary"), [], { kinds: ["registry", "reentry", "notification"] });
+  const dir = useLiveQuery<any[]>(() => api("/dashboard/directory"), [], { kinds: ["registry"] });
   const [feed, setFeed] = React.useState<any[]>([]);
-  const lastId = React.useRef(0);
 
+  // live feed straight off the SSE stream
+  React.useEffect(
+    () =>
+      onLive((e) => {
+        if (e.kind !== "registry") return;
+        setFeed((f) => {
+          if (f.some((x) => x.hash === e.hash)) return f;
+          return [
+            { hash: e.hash, event_type: e.event_type, actor: e.actor, batch_number: e.batch_number, created_at: e.at },
+            ...f,
+          ].slice(0, 30);
+        });
+      }),
+    []
+  );
+
+  // seed the feed once (and poll it only while the stream is down)
   React.useEffect(() => {
     let alive = true;
-    let t: ReturnType<typeof setInterval> | undefined;
-    async function poll() {
+    const pull = async () => {
       try {
-        const r = await api<any>(`/dashboard/events/stream?since_id=${lastId.current}`);
-        if (!alive || !r.events.length) return;
-        lastId.current = Math.max(lastId.current, r.last_id);
+        const r = await api<any>("/dashboard/events/stream?since_id=0&limit=30");
+        if (!alive) return;
         setFeed((f) => {
-          const seen = new Set(f.map((x: any) => x.id));
-          const fresh = r.events.filter((x: any) => !seen.has(x.id));
-          return [...fresh.reverse(), ...f].slice(0, 30);
+          const seen = new Set(f.map((x: any) => x.hash));
+          const rows = r.events
+            .filter((x: any) => !seen.has(x.hash))
+            .map((x: any) => ({ hash: x.hash, event_type: x.event_type, actor: x.actor, batch_number: x.batch_number, created_at: x.created_at }));
+          return [...rows.reverse(), ...f].slice(0, 30);
         });
-      } catch {
-        if (t) clearInterval(t); // stop polling on auth/network failure
-      }
-    }
-    poll();
-    t = setInterval(poll, 3500);
-    return () => { alive = false; if (t) clearInterval(t); };
-  }, []);
+      } catch {}
+    };
+    pull();
+    if (connected) return () => { alive = false; };
+    const t = setInterval(pull, 4000);
+    return () => { alive = false; clearInterval(t); };
+  }, [connected]);
 
   async function downloadCsv() {
     const res = await fetch(`${API}/dashboard/compliance-export.csv`, { headers: { Authorization: `Bearer ${getToken()}` } });
@@ -145,7 +162,7 @@ export default function Dashboard() {
         {feed.length ? (
           <ul className="space-y-1.5">
             {feed.map((e) => (
-              <li key={e.id} className="flex flex-wrap items-center gap-2 text-[12px]">
+              <li key={e.hash} className="flex flex-wrap items-center gap-2 text-[12px]">
                 <span className="text-muted tabular-nums">{String(e.created_at).slice(11, 19)}</span>
                 <Badge tone="info">{e.event_type}</Badge>
                 <span className="font-medium text-ink">{e.batch_number}</span>

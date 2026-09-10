@@ -8,6 +8,7 @@ import {
   Alert, Badge, Card, DataGrid, Mono, SkeletonRows, StatusBadge,
   Timeline, TimelineItem, toneFor,
 } from "@/lib/ui";
+import { onLive } from "@/lib/realtime";
 
 const STEPS = ["ACTIVE", "RETURN_INITIATED", "PICKUP_SCHEDULED", "PICKUP_CONFIRMED", "RECEIVED_BY_MANUFACTURER", "DESTROYED_CERTIFIED"];
 
@@ -16,9 +17,18 @@ export default function BatchDetail() {
   const [d, setD] = React.useState<any>(null);
   const [err, setErr] = React.useState<string | null>(null);
 
-  React.useEffect(() => {
+  const load = React.useCallback(() => {
     api(`/dashboard/batches/${id}/timeline`).then(setD).catch((e) => setErr(e.message));
   }, [id]);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  React.useEffect(
+    () => onLive((e) => {
+      if ((e.kind === "registry" || e.kind === "reentry") && e.batch_id === id) load();
+    }),
+    [id, load]
+  );
 
   if (err) return <Alert tone="danger">{err}</Alert>;
   if (!d) return <Card><SkeletonRows rows={7} /></Card>;

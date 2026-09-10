@@ -5,12 +5,13 @@ import { Inbox, FileCheck2, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import {
   Alert, Badge, Button, Card, EmptyState, Mono, PageHeader, PromptModal,
-  SkeletonRows, StatusBadge, Table, Td, Tr, useAsync,
+  SkeletonRows, StatusBadge, Table, Td, Tr,
 } from "@/lib/ui";
+import { useLiveQuery } from "@/lib/realtime";
 
 export default function ManufacturerPage() {
-  const inbound = useAsync<any[]>(() => api("/manufacturer/inbound"), []);
-  const receipts = useAsync<any[]>(() => api("/manufacturer/receipts"), []);
+  const inbound = useLiveQuery<any[]>(() => api("/manufacturer/inbound"), [], { kinds: ["registry"] });
+  const receipts = useLiveQuery<any[]>(() => api("/manufacturer/receipts"), [], { kinds: ["registry"] });
   const [msg, setMsg] = React.useState<{ tone: "success" | "danger"; text: string } | null>(null);
   const [receiptRow, setReceiptRow] = React.useState<any>(null);
   const [certBusy, setCertBusy] = React.useState<string | null>(null);

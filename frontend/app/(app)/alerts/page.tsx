@@ -3,10 +3,11 @@ import React from "react";
 import Link from "next/link";
 import { ShieldAlert, ShieldCheck, ArrowRight } from "lucide-react";
 import { api } from "@/lib/api";
-import { Badge, Button, Card, EmptyState, Mono, PageHeader, SkeletonRows, StatusBadge, Table, Td, Tr, useAsync } from "@/lib/ui";
+import { Badge, Button, Card, EmptyState, Mono, PageHeader, SkeletonRows, StatusBadge, Table, Td, Tr } from "@/lib/ui";
+import { useLiveQuery } from "@/lib/realtime";
 
 export default function AlertsPage() {
-  const alerts = useAsync<any[]>(() => api("/alerts/reentry"), []);
+  const alerts = useLiveQuery<any[]>(() => api("/alerts/reentry"), [], { kinds: ["reentry", "registry"] });
   const open = (alerts.data || []).filter((a) => a.status === "OPEN").length;
 
   return (

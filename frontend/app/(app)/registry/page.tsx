@@ -5,11 +5,12 @@ import { Search, ShieldCheck, ShieldX, Fingerprint } from "lucide-react";
 import { api } from "@/lib/api";
 import {
   Alert, Badge, Button, Card, DataGrid, EmptyState, Field, Input, Mono, PageHeader,
-  SkeletonRows, StatusBadge, Table, Td, Timeline, TimelineItem, Tr, toneFor, useAsync,
+  SkeletonRows, StatusBadge, Table, Td, Timeline, TimelineItem, Tr, toneFor,
 } from "@/lib/ui";
+import { onLive, useLiveQuery } from "@/lib/realtime";
 
 export default function RegistryExplorer() {
-  const list = useAsync<any[]>(() => api("/dashboard/batches"), []);
+  const list = useLiveQuery<any[]>(() => api("/dashboard/batches"), [], { kinds: ["registry"] });
   const [q, setQ] = React.useState("");
   const [sel, setSel] = React.useState<{ batch_number: string; mlid: string } | null>(null);
   const [history, setHistory] = React.useState<any>(null);
@@ -38,6 +39,20 @@ export default function RegistryExplorer() {
     if (!sel && list.data?.length) { const b = list.data[0]; load(b.batch_number, b.manufacturer_license_id); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list.data]);
+
+  // live: if an event lands for the batch currently open, refresh its chain
+  const selRef = React.useRef(sel);
+  selRef.current = sel;
+  React.useEffect(
+    () =>
+      onLive((e) => {
+        const s = selRef.current;
+        if (e.kind === "registry" && s && e.batch_number === s.batch_number && e.manufacturer_license_id === s.mlid) {
+          load(s.batch_number, s.mlid);
+        }
+      }),
+    []
+  );
 
   return (
     <div className="space-y-6">
