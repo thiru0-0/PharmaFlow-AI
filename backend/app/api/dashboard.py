@@ -35,7 +35,12 @@ def _batch_scope(db, user: User) -> set[str] | None:
     if user.role == Role.MANUFACTURER.value:
         return set(db.execute(select(Batch.id).where(Batch.manufacturer_id == user.id)).scalars().all())
     if user.role == Role.RETAILER.value:
-        return set(db.execute(select(BatchHolding.batch_id).where(BatchHolding.retailer_id == user.id)).scalars().all())
+        held = set(db.execute(select(BatchHolding.batch_id).where(BatchHolding.retailer_id == user.id)).scalars().all())
+        # A partial return splits the returned units into their own batch identity
+        # (see retailer.py::_split_batch_for_return) — the retailer never "holds" it,
+        # but they initiated its return, so it must stay visible/accessible to them.
+        returned = set(db.execute(select(ReturnRequest.batch_id).where(ReturnRequest.retailer_id == user.id)).scalars().all())
+        return held | returned
     if user.role == Role.DISTRIBUTOR.value:
         return set(db.execute(select(ReturnRequest.batch_id).where(ReturnRequest.distributor_id == user.id)).scalars().all())
     return set()

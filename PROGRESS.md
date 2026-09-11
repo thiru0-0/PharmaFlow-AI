@@ -100,4 +100,35 @@ each reflected instantly on an untouched, already-open browser page. No bugs fou
 
 **Latest commits on `main`** (chronological): backend real-time (`d9833c9`) · frontend real-time
 (`3e6b783`) · less-static demo data + dispute explainer (`cf89456`) · README real-time docs
-(`9b8227c`) · solid topbar fix (`88d5243`) · inventory fix (`6c581e6`).
+(`9b8227c`) · solid topbar fix (`88d5243`) · inventory fix (`6c581e6`) · Render/Vercel deploy
+docs (`5311e71`) · Next.js CVE patch 15.5.4→15.5.25 (`f33c555`) · partial-return batch split.
+
+## Deployed
+
+Live on Render (backend, `pharmaflow-ai.onrender.com`, single instance/worker) + Vercel
+(frontend). See README "Deploying" for the full walkthrough. Both auto-redeploy on every
+`git push` to `main`.
+
+## Partial-return batch split (this session)
+
+**Problem reported**: returning part of a batch (e.g. 20 of 120 units) flagged the *entire*
+batch as `RETURN_INITIATED` — the other 100 units became unsellable (blocked as re-entry
+fraud on the very next scan), because the whole platform tracks stock per *batch*, not per
+unit, and a batch only has one state.
+
+**Fix**: `POST /retailer/batches/{id}/initiate-return` now distinguishes a full return
+(`quantity_reported == quantity_on_hand`) from a partial one. On a partial return it splits
+the returned units into a **brand-new batch identity** (`app/api/retailer.py::_split_batch_for_return`)
+— own id, own QR (`(10)AZ-2025-A-RET-XXXXXX(21)...`), own registry hash-chain (genesis event
+`BATCH_SPLIT_FOR_RETURN` linking back to the parent) — which enters `RETURN_INITIATED` and
+flows through the distributor/manufacturer pipeline exactly like any other batch (those pages
+key everything off `batch_id`, so **zero changes** were needed there). The **parent batch
+stays `ACTIVE`, unflagged**, with `quantity_on_hand` reduced by just the returned amount —
+still sellable under the same QR, still POS-scannable, no re-entry alert. A full return
+(report the entire remaining quantity) behaves exactly as before: the original batch itself
+is flagged and retired, no split. No DB migration needed — no new tables/columns, just new
+`Batch`/`ReturnRequest` rows using the existing schema. Retailer's own dashboard scope
+(`_batch_scope` in `dashboard.py`) extended to include batches they've initiated a return on
+(not just ones they currently hold), so a split child stays visible/accessible to them.
+2 new regression tests (`test_partial_return_splits_batch_and_keeps_remainder_sellable`,
+`test_full_return_still_flags_whole_batch_no_split`) — 28/28 passing.

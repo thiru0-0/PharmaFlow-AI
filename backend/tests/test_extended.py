@@ -167,3 +167,61 @@ def test_insufficient_stock_blocks_return(client, retailer_a, db):
     assert r.status_code == 409
     unchanged = client.get("/retailer/batches", headers=retailer_a).json()
     assert next(x for x in unchanged if x["batch_number"] == "AZ-2025-D")["quantity_on_hand"] == d["quantity_on_hand"]
+
+
+# a return for FEWER units than are on hand must split the returned units into their
+# own batch (which enters the pipeline) while the parent batch stays ACTIVE, unflagged,
+# and sellable for whatever wasn't returned — never treats the whole batch as returned.
+def test_partial_return_splits_batch_and_keeps_remainder_sellable(client, retailer_a, distributor, db):
+    before = client.get("/retailer/batches", headers=retailer_a).json()
+    a = next(x for x in before if x["batch_number"] == "AZ-2025-A")
+    on_hand_before = a["quantity_on_hand"]
+    assert on_hand_before > 20  # must have genuine room left over for this to be "partial"
+
+    r = client.post(f"/retailer/batches/{a['batch_id']}/initiate-return", headers=retailer_a,
+                    json={"quantity_reported": 20, "condition": "sealed"})
+    assert r.status_code == 201
+    body = r.json()
+    assert body["split"] is True
+    assert body["batch_number"] != a["batch_number"]          # a brand-new child batch identity
+    assert body["original_batch_number"] == a["batch_number"]
+    assert body["remaining_on_hand"] == on_hand_before - 20
+
+    # parent batch: same id/QR, stays ACTIVE, never flagged, remainder still sellable
+    after = client.get("/retailer/batches", headers=retailer_a).json()
+    a_after = next(x for x in after if x["batch_number"] == "AZ-2025-A")
+    assert a_after["batch_id"] == a["batch_id"]
+    assert a_after["state"] == "ACTIVE"
+    assert a_after["reentry_flagged"] is False
+    assert a_after["quantity_on_hand"] == on_hand_before - 20
+
+    # selling more of the remainder succeeds — must NOT be blocked as re-entry
+    sale = client.post("/retailer/pos/sale", headers=retailer_a,
+                       json={"qr_payload": a_after["qr_payload"], "quantity": 5})
+    assert sale.status_code == 201
+    assert sale.json()["remaining_on_hand"] == on_hand_before - 25
+
+    # the split-off 20 units show up as their own independent return, from the
+    # distributor's side, exactly like any other batch's return
+    pending = client.get("/distributor/returns/pending", headers=distributor).json()
+    split_row = next(p for p in pending if p["batch_number"] == body["batch_number"])
+    assert split_row["quantity_reported"] == 20
+
+
+# reporting the FULL on-hand quantity is a full return — no split, same behavior as before:
+# the batch itself is flagged/retired and any further sale attempt on it is re-entry fraud.
+def test_full_return_still_flags_whole_batch_no_split(client, retailer_a, retailer_b, db):
+    before = client.get("/retailer/batches", headers=retailer_a).json()
+    d = next(x for x in before if x["batch_number"] == "AZ-2025-D")
+
+    r = client.post(f"/retailer/batches/{d['batch_id']}/initiate-return", headers=retailer_a,
+                    json={"quantity_reported": d["quantity_on_hand"], "condition": "sealed"})
+    assert r.status_code == 201
+    body = r.json()
+    assert body["split"] is False
+    assert body["batch_number"] == d["batch_number"]  # same batch, not split
+    assert body["remaining_on_hand"] == 0
+
+    dd = db.execute(select(Batch).where(Batch.batch_number == "AZ-2025-D")).scalars().first()
+    assert dd.state == "RETURN_INITIATED"
+    assert dd.flagged_at is not None
