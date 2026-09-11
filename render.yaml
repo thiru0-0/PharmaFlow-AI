@@ -1,0 +1,47 @@
+# Render Blueprint for the PharmaFlow AI backend.
+# https://render.com/docs/blueprint-spec
+#
+# Deploys only the FastAPI backend as a persistent web service — the frontend goes to
+# Vercel (see README "Deploying"). Database stays on Supabase; this blueprint does not
+# provision one.
+#
+# IMPORTANT: this service must run as exactly one instance / one worker. The real-time
+# system (SSE + the in-process event bus) and the APScheduler background jobs both live
+# in a single process's memory — do not raise the instance count or --workers above 1
+# without first bridging events.py to Postgres LISTEN/NOTIFY.
+
+services:
+  - type: web
+    name: pharmaflow-api
+    runtime: python
+    rootDir: backend
+    plan: free # bump to "starter" (or higher) before a judged demo so it doesn't sleep
+    numInstances: 1
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: APP_ENV
+        value: demo
+      - key: DATABASE_URL
+        sync: false # paste your Supabase connection string in the Render dashboard
+      - key: JWT_SECRET
+        generateValue: true # Render mints a random 256-bit secret for you
+      - key: CORS_ORIGINS
+        sync: false # e.g. https://your-app.vercel.app (set after the frontend is deployed)
+      - key: JWT_ALG
+        value: HS256
+      - key: JWT_EXPIRE_MINUTES
+        value: "720"
+      - key: EXPIRY_ALERT_DAYS
+        value: "60"
+      - key: QTY_TOLERANCE_PCT
+        value: "2.0"
+      - key: QTY_TOLERANCE_MIN_UNITS
+        value: "2"
+      - key: RETAILER_RETURN_WINDOW_DAYS
+        value: "30"
+      - key: MANUFACTURER_DISPOSAL_WINDOW_DAYS
+        value: "30"
