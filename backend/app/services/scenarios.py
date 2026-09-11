@@ -49,21 +49,28 @@ def run_fraud(db: Session) -> dict:
         raise HTTPException(409, "Batch D not in ACTIVE state — run demo reset first")
 
     # 1. Retailer A initiates return on Batch D
+    holding_a = db.execute(
+        select(BatchHolding).where(BatchHolding.batch_id == D.id, BatchHolding.retailer_id == ra.id)
+    ).scalars().first()
+    returned_qty = min(25, holding_a.quantity_on_hand) if holding_a else 25
     rr = db.execute(
         select(ReturnRequest).where(ReturnRequest.batch_id == D.id, ReturnRequest.retailer_id == ra.id)
     ).scalars().first() or ReturnRequest(
         batch_id=D.id, retailer_id=ra.id, distributor_id=ra.mapped_distributor_id, expiry_date=D.expiry_date
     )
-    rr.quantity_reported = 25
+    rr.quantity_reported = returned_qty
     rr.condition = "sealed"
     rr.photo_url = "mock://uploads/return-D.jpg"
     rr.status = ReturnStatus.RETURN_INITIATED.value
     rr.confirmed_at = utcnow()
     db.add(rr)
+    if holding_a:
+        holding_a.quantity_on_hand -= returned_qty
+        db.add(holding_a)
     db.flush()
     batch_state.transition(db, D, BatchState.RETURN_INITIATED, actor=ra,
                            event_type="RETURN_INITIATED",
-                           payload={"return_request_id": rr.id, "quantity_reported": 25, "trigger": "manual"})
+                           payload={"return_request_id": rr.id, "quantity_reported": returned_qty, "trigger": "manual"})
     db.commit()
     steps.append({"step": "Retailer A initiates return on Batch D",
                   "result": f"state={D.state}, flagged_at={D.flagged_at.isoformat()}"})
@@ -117,19 +124,23 @@ def run_happy(db: Session) -> dict:
     db.commit()
     steps.append({"step": "Retailer sells 3 units", "result": f"stock {before} -> {holding.quantity_on_hand}"})
 
-    # 2. force expiry -> return initiated
+    # 2. force expiry -> return initiated (all remaining stock leaves active inventory)
     A.expiry_date = utcnow()
+    returned_qty = holding.quantity_on_hand
     rr = ReturnRequest(batch_id=A.id, retailer_id=ra.id, distributor_id=dist.id,
-                       quantity_reported=holding.quantity_on_hand, condition="sealed",
+                       quantity_reported=returned_qty, condition="sealed",
                        photo_url="mock://uploads/return-A.jpg",
                        status=ReturnStatus.RETURN_INITIATED.value, expiry_date=A.expiry_date,
                        confirmed_at=utcnow())
     db.add(rr)
+    holding.quantity_on_hand = 0
+    db.add(holding)
     db.flush()
     batch_state.transition(db, A, BatchState.RETURN_INITIATED, actor=ra, event_type="RETURN_INITIATED",
                            payload={"return_request_id": rr.id, "quantity_reported": rr.quantity_reported})
     db.commit()
-    steps.append({"step": "Expiry crossed -> return auto-initiated", "result": f"state={A.state}, flagged"})
+    steps.append({"step": "Expiry crossed -> return auto-initiated",
+                  "result": f"state={A.state}, flagged, {returned_qty} units left inventory (on-hand -> 0)"})
 
     # 3. distributor optimized route + pickup (qty matches)
     from app.services.route_optimizer import Stop, optimize

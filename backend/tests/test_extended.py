@@ -121,3 +121,49 @@ def test_reentry_resolution_appends(client, retailer_a, retailer_b, regulator, d
     again = client.get(f"/alerts/reentry/{aid}", headers=regulator).json()
     assert again["status"] == "RESOLVED"
     assert again["resolution_notes"] == "investigated"
+
+
+# initiating/confirming a return must pull the counted quantity out of on-hand inventory
+# immediately, and pickup confirmation later must never touch it again.
+def test_return_deducts_inventory_immediately(client, retailer_a, distributor, admin, db):
+    before = client.get("/retailer/batches", headers=retailer_a).json()
+    d = next(x for x in before if x["batch_number"] == "AZ-2025-D")
+    on_hand_before = d["quantity_on_hand"]
+    assert on_hand_before > 0
+
+    r = client.post(f"/retailer/batches/{d['batch_id']}/initiate-return", headers=retailer_a,
+                    json={"quantity_reported": on_hand_before, "condition": "sealed"})
+    assert r.status_code == 201
+    assert r.json()["remaining_on_hand"] == 0
+
+    after = client.get("/retailer/batches", headers=retailer_a).json()
+    d_after = next(x for x in after if x["batch_number"] == "AZ-2025-D")
+    assert d_after["quantity_on_hand"] == 0  # left the shelf the instant the return was counted
+
+    # can't report more than what's actually left
+    r2 = client.post(f"/retailer/batches/{d['batch_id']}/initiate-return", headers=retailer_a,
+                     json={"quantity_reported": 5, "condition": "sealed"})
+    assert r2.status_code == 409  # already open, blocked before any further deduction
+
+    # pickup confirmation must not touch the retailer's inventory a second time
+    pending = client.get("/distributor/returns/pending", headers=distributor).json()
+    p = next(x for x in pending if x["batch_number"] == "AZ-2025-D")
+    client.post("/distributor/routes/optimize", headers=distributor, json={"vehicle_capacity": 500})
+    pickups = client.get("/distributor/pickups", headers=distributor).json()
+    pk = next(x for x in pickups if x["batch_number"] == "AZ-2025-D")
+    client.post(f"/distributor/pickups/{pk['pickup_id']}/confirm", headers=distributor,
+                json={"quantity_confirmed": on_hand_before})
+
+    final = client.get("/retailer/batches", headers=retailer_a).json()
+    d_final = next(x for x in final if x["batch_number"] == "AZ-2025-D")
+    assert d_final["quantity_on_hand"] == 0  # unchanged by the pickup step
+
+
+def test_insufficient_stock_blocks_return(client, retailer_a, db):
+    b = client.get("/retailer/batches", headers=retailer_a).json()
+    d = next(x for x in b if x["batch_number"] == "AZ-2025-D")
+    r = client.post(f"/retailer/batches/{d['batch_id']}/initiate-return", headers=retailer_a,
+                    json={"quantity_reported": d["quantity_on_hand"] + 1000, "condition": "sealed"})
+    assert r.status_code == 409
+    unchanged = client.get("/retailer/batches", headers=retailer_a).json()
+    assert next(x for x in unchanged if x["batch_number"] == "AZ-2025-D")["quantity_on_hand"] == d["quantity_on_hand"]

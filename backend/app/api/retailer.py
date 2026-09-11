@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.core.deps import CurrentUser, DbDep, require_roles
@@ -26,6 +26,16 @@ retailer_only = Depends(require_roles(Role.RETAILER))
 
 def _aware(dt):
     return dt.replace(tzinfo=timezone.utc) if dt and dt.tzinfo is None else dt
+
+
+def _deduct_stock(db, holding: BatchHolding, qty: int) -> bool:
+    """Atomically remove `qty` units from a holding. False (no-op) if stock is insufficient."""
+    res = db.execute(
+        update(BatchHolding)
+        .where(BatchHolding.id == holding.id, BatchHolding.quantity_on_hand >= qty)
+        .values(quantity_on_hand=BatchHolding.quantity_on_hand - qty, last_updated=utcnow())
+    )
+    return res.rowcount == 1
 
 
 @router.get("/batches")
@@ -125,17 +135,7 @@ def pos_sale(body: SaleIn, user: CurrentUser, db: DbDep, _=retailer_only):
         raise HTTPException(400, "You do not hold this batch")
 
     # Atomic conditional decrement — portable guard against lost updates / negative stock.
-    from sqlalchemy import update
-
-    res = db.execute(
-        update(BatchHolding)
-        .where(
-            BatchHolding.id == holding.id,
-            BatchHolding.quantity_on_hand >= body.quantity,
-        )
-        .values(quantity_on_hand=BatchHolding.quantity_on_hand - body.quantity, last_updated=utcnow())
-    )
-    if res.rowcount != 1:
+    if not _deduct_stock(db, holding, body.quantity):
         db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, "Insufficient stock on hand for this batch")
 
@@ -185,6 +185,15 @@ def initiate_return(batch_id: str, body: ReturnConfirmIn, user: CurrentUser, db:
                     "existing_return_id": existing.id, "status": existing.status},
         )
 
+    # First time this return is being counted: pull the reported quantity out of active
+    # on-hand stock now — those units are being handed off, not sellable, and this batch
+    # is about to be blocked from sale anyway. (existing.status == AUTO_CREATED means it
+    # was never confirmed/deducted before; `existing is None` means this is brand new.)
+    if not _deduct_stock(db, holding, body.quantity_reported):
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Reported quantity exceeds current stock on hand for this batch")
+
     rr = existing or ReturnRequest(
         batch_id=batch_id, retailer_id=user.id,
         distributor_id=user.mapped_distributor_id, expiry_date=batch.expiry_date,
@@ -209,8 +218,10 @@ def initiate_return(batch_id: str, body: ReturnConfirmIn, user: CurrentUser, db:
             payload={"return_request_id": rr.id, "quantity_reported": body.quantity_reported},
         )
     db.commit()
+    db.refresh(holding)
     return {"status": "RETURN_INITIATED", "return_id": rr.id, "batch_number": batch.batch_number,
-            "batch_state": batch.state, "flagged": True, "flagged_at": batch.flagged_at}
+            "batch_state": batch.state, "flagged": True, "flagged_at": batch.flagged_at,
+            "remaining_on_hand": holding.quantity_on_hand}
 
 
 @router.get("/returns")
@@ -240,12 +251,28 @@ def my_returns(user: CurrentUser, db: DbDep, _=retailer_only):
 
 @router.post("/returns/{return_id}/confirm")
 def confirm_return(return_id: str, body: ReturnConfirmIn, user: CurrentUser, db: DbDep, _=retailer_only):
-    rr = db.get(ReturnRequest, return_id)
+    rr = db.execute(
+        select(ReturnRequest).where(ReturnRequest.id == return_id).with_for_update()
+    ).scalars().first()
     if not rr or rr.retailer_id != user.id:
         raise HTTPException(404, "Return request not found")
-    if rr.status not in (ReturnStatus.AUTO_CREATED.value, ReturnStatus.RETURN_INITIATED.value):
-        raise HTTPException(409, f"Return already progressed ({rr.status})")
+    if rr.status != ReturnStatus.AUTO_CREATED.value:
+        # Already counted once (or further along) — never deduct stock twice.
+        raise HTTPException(409, f"Return already confirmed ({rr.status})")
     batch = db.get(Batch, rr.batch_id)
+
+    holding = db.execute(
+        select(BatchHolding)
+        .where(BatchHolding.batch_id == rr.batch_id, BatchHolding.retailer_id == user.id)
+        .with_for_update()
+    ).scalars().first()
+    if holding is None:
+        raise HTTPException(400, "You do not hold this batch")
+
+    if not _deduct_stock(db, holding, body.quantity_reported):
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Reported quantity exceeds current stock on hand for this batch")
 
     rr.quantity_reported = body.quantity_reported
     rr.condition = body.condition
@@ -260,5 +287,6 @@ def confirm_return(return_id: str, body: ReturnConfirmIn, user: CurrentUser, db:
                  "condition": body.condition, "photo_url": rr.photo_url},
     )
     db.commit()
+    db.refresh(holding)
     return {"status": "RETURN_INITIATED", "return_id": rr.id, "batch_number": batch.batch_number,
-            "batch_state": batch.state, "flagged": True}
+            "batch_state": batch.state, "flagged": True, "remaining_on_hand": holding.quantity_on_hand}
