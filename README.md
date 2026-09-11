@@ -123,7 +123,7 @@ Open <http://localhost:3000>.
 
 ```bash
 cd backend
-python -m pytest -q          # 15/15 critical tests (Build Spec §13.2)
+python -m pytest -q          # 26/26 — 15 non-negotiable critical tests (Build Spec §13.2) + 11 extended
 ```
 
 ---
@@ -229,8 +229,11 @@ degrades to a **clearly labelled** nearest-neighbour heuristic (`ortools_used: f
 `POST /disputes/{id}/resolve` · `GET /manufacturer/receipts` · `POST /manufacturer/receipts` ·
 `POST /manufacturer/certificates` · `GET /registry/batches/{batch_number}/history` ·
 `GET /registry/verify/{batch_number}` · `GET /alerts/reentry` · `POST /alerts/reentry/{id}/resolve` ·
-`GET /dashboard/summary` · `GET /dashboard/events/stream` (short-poll) ·
-`GET /dashboard/compliance-export.csv` · `POST /demo/reset` · `POST /demo/scripts/{fraud|happy|dispute}`
+`GET /dashboard/summary` · `GET /dashboard/events/stream` (poll fallback) ·
+`GET /stream` (Server-Sent Events, primary real-time feed) · `GET /notifications` ·
+`POST /notifications/{id}/read` · `POST /notifications/read-all` ·
+`GET /dashboard/compliance-export.csv` · `POST /demo/reset` ·
+`POST /demo/scripts/{fraud|happy|dispute|pulse}`
 
 ---
 
@@ -238,8 +241,10 @@ degrades to a **clearly labelled** nearest-neighbour heuristic (`ortools_used: f
 
 - **Default DB is SQLite** unless `DATABASE_URL` points at Postgres. The state-machine guards and
   certificate gate are installed for both dialects; row-level locking is a no-op on SQLite so the
-  concurrent-sale guard uses an atomic conditional `UPDATE` (portable, tested).
-- Real-time dashboard is a 3.5 s poll, not a WebSocket.
+  concurrent-sale guard uses an atomic conditional `UPDATE` (portable, tested) — the same pattern
+  now also backs the retailer's return-quantity deduction (see Real-time section above).
+- Real-time runs on a single in-process event bus (SSE) — correct for one backend worker. Scaling
+  to multiple workers needs a shared bus (Postgres `LISTEN/NOTIFY` or Redis) — not built yet.
 - Notifications are mock providers (delivery status shows `simulated` for email/SMS).
 - Maps are schematic (ordered stop list), no Mapbox tiles.
 - File uploads are represented as `mock://` URLs; the storage layer is abstracted but local.
@@ -248,16 +253,21 @@ degrades to a **clearly labelled** nearest-neighbour heuristic (`ortools_used: f
 
 ## Roadmap
 
-WebSocket streaming · S3-compatible upload storage · offline pickup queue with idempotent sync ·
+Postgres `LISTEN/NOTIFY` (or Redis) bridge so real-time works across multiple backend workers ·
+S3-compatible upload storage · offline pickup queue with idempotent sync ·
 expiry-risk ML forecasting (optional intelligence, never the fraud mechanism) · Mapbox routing ·
-Docker Compose one-command startup · pharmacy-billing-software integration.
+Docker Compose one-command startup · pharmacy-billing-software integration · inter-pharmacy
+stock-redistribution for near-expiry batches · Users & Licenses admin console.
 
 ## Repo layout
 
 ```
 backend/app/{core,db,models,schemas,services,api,jobs}   FastAPI application
+backend/app/services/events.py                           real-time pub/sub (SSE event bus)
 backend/scripts/init_db.py                               schema + guards + seed
 backend/tests/test_critical.py                           the 15 non-negotiable tests
+backend/tests/test_extended.py                           11 further checks (RBAC, SLA, inventory, audit trail)
+frontend/lib/realtime.tsx                                SSE client, useLiveQuery, notifications
 frontend/app/(app)/{retailer,distributor,manufacturer,dashboard,registry,alerts,disputes,batch,admin}
 PROGRESS.md                                              build/checkpoint log
 ```
